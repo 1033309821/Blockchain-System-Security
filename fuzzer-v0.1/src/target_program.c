@@ -1,25 +1,31 @@
-#include<stdio.h>
-#include<stdlib.h>
-int main(int argc, char **argv){
-	char ptr[20];
-	if(argc>1){
-		FILE * fp = fopen(argv[1],"r");
-		fgets(ptr, sizeof(ptr), fp);
-	}
-	else{
-		fgets(ptr, sizeof(ptr), stdin);
-	}
-	printf("%s",ptr);
-	if(ptr[0]== '0'){
-		if(ptr[1]== 'x'){
-			if(ptr[2]== 'a'){
-				if(ptr[3]== 'a'){
-						abort();
-					}else printf("%c",ptr[3]);
-			}else printf("%c",ptr[2]);
-		}
-		else printf("%c",ptr[1]);
-	}
-	else printf("%c",ptr[0]);
-	return 0;
+# include <stdio.h>
+# include <stdlib.h>
+# include <unistd.h>
+# include <string.h>
+# include <signal.h>
+
+int vuln(char *str){
+    int len = strlen(str);
+    if(str[0] == 'A' && len == 66){
+        raise(SIGSEGV);
+        //如果输入的字符串的首字母为A并且长度为66，则异常退出
+    } 
+    else if(str[0] == 'f' && len == 6){
+        raise(SIGSEGV);
+    } 
+    else{
+        printf("it is good!\n");
+    }
+
+    return 0;
+}
+
+int main(int argc, char *argv[]){
+    char buf[100] = {0};
+    gets(buf);  //存在栈溢出漏洞
+    printf(buf);    //存在格式化字符串漏洞
+    printf("\t");
+    vuln(buf);
+
+    return 0;
 }
