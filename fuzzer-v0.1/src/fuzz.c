@@ -76,8 +76,8 @@ void mutate(char* seed, char* test_case) {
 }
 
 // 根据种子生成随机输入，并执行目标程序
-int run_target_program(unsigned char *testcase, char *input, int input_size, char *output, int output_size, char *error) {
-    int coverage = 0;
+double run_target_program(unsigned char *testcase, char *input, int input_size, char *output, int output_size, char *error) {
+    double coverage = 0;
     char coverage_cmd[MAX_INPUT_SIZE];
     char gcov_output[MAX_COVERAGE_SIZE];
     pid_t pid;
@@ -136,7 +136,7 @@ int run_target_program(unsigned char *testcase, char *input, int input_size, cha
         waitpid(pid, NULL, 0);
 
         // 获取代码覆盖率
-        snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov target_program > /dev/null && cat target_program.c.gcov | grep -o '[1-9]: ' | wc -l");//用于格式化输出字符串，并将结果写入到指定的缓冲区
+        snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov ./target_program -b | head -n 2 | tail -1 | grep -o "..\.[0-9][0-9]"");//用于格式化输出字符串，并将结果写入到指定的缓冲区
         FILE *fp = popen(coverage_cmd, "r");//popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
         if(fp == NULL) {
             perror("popen");
@@ -145,7 +145,7 @@ int run_target_program(unsigned char *testcase, char *input, int input_size, cha
 
         fgets(gcov_output, MAX_COVERAGE_SIZE, fp);
         pclose(fp);
-        coverage = atoi(gcov_output);//将字符串里的数字字符转化为整形数。返回整形值
+        coverage = atof(gcov_output);//将字符串里的数字字符转化为整形数。返回整形值
 
         // 获取目标程序的输出
         int nbytes = read(pipe_fd[0], output, output_size - 1);
@@ -168,7 +168,7 @@ int run_target_program(unsigned char *testcase, char *input, int input_size, cha
 }
 
 // 将测试结果保存到文件
-void save_test_result(char *seed, unsigned char *testcase, int coverage, char *error, char *output) {
+void save_test_result(char *seed, unsigned char *testcase, double coverage, char *error, char *output int flag) {
     char filename[MAX_INPUT_SIZE];
 /*
     printf("seed:%s\n",seed);
@@ -176,7 +176,7 @@ void save_test_result(char *seed, unsigned char *testcase, int coverage, char *e
     printf("error:%s\n",error);
     printf("output:%s\n",output);
 */
-    if(error[0]=='\0'){
+    if(flag == 0 ){
 	    snprintf(filename, MAX_INPUT_SIZE, "./out/queue/test_result_%s.txt", seed);
 	    FILE *fp = fopen(filename, "w");
     	if(fp == NULL) {
@@ -185,7 +185,7 @@ void save_test_result(char *seed, unsigned char *testcase, int coverage, char *e
     	}
 	    fprintf(fp, "Seed: %s\n", seed);
         fprintf(fp, "Testcase: %s\n", testcase);
-    	fprintf(fp, "Coverage: %d\n", coverage);
+    	fprintf(fp, "Coverage: %lf\n", coverage);
     	fprintf(fp, "Error: %s\n", error);
     	fprintf(fp, "Output: %s\n", output);
 	    fclose(fp);
@@ -199,7 +199,7 @@ void save_test_result(char *seed, unsigned char *testcase, int coverage, char *e
     	}
 	    fprintf(fp, "Seed: %s\n", seed);
         fprintf(fp, "Testcase: %s\n", testcase);
-    	fprintf(fp, "Coverage: %d\n", coverage);
+    	fprintf(fp, "Coverage: %lf\n", coverage);
     	fprintf(fp, "Error: %s\n", error);
     	fprintf(fp, "Output: %s\n", output);
 	    fclose(fp);
@@ -216,8 +216,9 @@ int main(int argc, char *argv[]) {
     char input[MAX_INPUT_SIZE];
     char output[MAX_INPUT_SIZE];
     char error[MAX_ERROR_SIZE];
-    int coverage = 0;
-    int max_coverage = 0;
+    double coverage = 0;
+    double max_coverage = 0;
+    int flag;
     int i = 0;
 
 
@@ -247,15 +248,15 @@ int main(int argc, char *argv[]) {
     generate_seed(seed);
     //strcpy(seed,"0xaa");
 
-    unsigned char * testcase; 
+    unsigned char * testcase;
     mutate(seed, testcase);
     // 根据种子生成随机输入，并执行目标程序，获取代码覆盖率和输出
     max_coverage = run_target_program(testcase, input, MAX_INPUT_SIZE, output, MAX_INPUT_SIZE, error);
-    save_test_result(seed, testcase, coverage, error, output);
+    save_test_result(seed, testcase, coverage, error, output, flag);
 
     for(;i<10000;i++) {
 
-        unsigned char * testcase; 
+        unsigned char * testcase;
         mutate(seed, testcase);
 
         // 根据种子生成随机输入，并执行目标程序，获取代码覆盖率和输出
@@ -264,15 +265,18 @@ int main(int argc, char *argv[]) {
         if(coverage > max_coverage){
             // 将当前种子与覆盖率传给optimize_seed函数，由该函数进行记录与优化种子
             max_coverage = coverage;
-            save_test_result(seed, testcase, coverage, error, output);
-            optimize_seed(seed, testcase); 
+            save_test_result(seed, testcase, coverage, error, output , 0);
+            optimize_seed(seed, testcase);
         }
 
+
         // 添加代码 如果测试用例导致了错误，执行保存（未解决）
-        
+        if(error[0]!='\0'){
+            // 将当前种子与覆盖率传给optimize_seed函数，由该函数进行记录与优化种子
+            save_test_result(seed, testcase, coverage, error, output , 1);
+        }
    }
 
     return 0;
 }
-
 
