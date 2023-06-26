@@ -168,7 +168,7 @@ double run_target_program(unsigned char *testcase, char *input, int input_size, 
 }
 
 // 将测试结果保存到文件
-void save_test_result(char *seed, unsigned char *testcase, double coverage, char *error, char *output int flag) {
+void save_test_result(char *seed, unsigned char *testcase, double coverage, char *error, char *output, int flag) {
     char filename[MAX_INPUT_SIZE];
 /*
     printf("seed:%s\n",seed);
@@ -218,7 +218,6 @@ int main(int argc, char *argv[]) {
     char error[MAX_ERROR_SIZE];
     double coverage = 0;
     double max_coverage = 0;
-    int flag;
     int i = 0;
 
 
@@ -252,7 +251,7 @@ int main(int argc, char *argv[]) {
     mutate(seed, testcase);
     // 根据种子生成随机输入，并执行目标程序，获取代码覆盖率和输出
     max_coverage = run_target_program(testcase, input, MAX_INPUT_SIZE, output, MAX_INPUT_SIZE, error);
-    save_test_result(seed, testcase, coverage, error, output, flag);
+    save_test_result(seed, testcase, coverage, error, output, 0);
 
     for(;i<10000;i++) {
 
