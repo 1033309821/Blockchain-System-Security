@@ -82,98 +82,7 @@ void mutate(char* seed, char* test_case) {
     }
 }
 
-// 根据种子生成随机输入，并执行目标程序
-double run_target_program(unsigned char *testcase, char *input, int input_size, char *output, int output_size, char *error, int *pipe_fd, int *pipe_err) {
-    double coverage = 0;
-    char coverage_cmd[MAX_INPUT_SIZE];
-    char gcov_output[MAX_COVERAGE_SIZE];
-    pid_t pid;
 
-    // 生成随机输入
-    /*
-    snprintf() 函数的返回值是输出到 str 缓冲区中的字符数，不包括字符串结尾的空字符 \0。
-    如果 snprintf() 输出的字符数超过了 size 参数指定的缓冲区大小，则输出的结果会被截断，
-    只有 size - 1 个字符被写入缓冲区，最后一个字符为字符串结尾的空字符 \0。
-    需要注意的是，snprintf() 函数返回的字符数并不包括字符串结尾的空字符 \0，
-    因此如果需要将输出结果作为一个字符串使用，则需要在缓冲区的末尾添加一个空字符 \0。
-    */
-    snprintf(input, input_size, "echo %s | ./target_program", testcase);
-
-    // 执行目标程序，并获取输出
-    /*int pipe_fd[2];
-    int pipe_err[2];
-
-	*/
-    /*
-    该函数成功时返回0，并将一对打开的文件描述符值填入fd参数指向的数组。失败时返回 -1并设置errno。
-    通过pipe函数创建的这两个文件描述符 fd[0] 和 fd[1] 分别构成管道的两端，往 fd[1] 写入的数据可以从 fd[0] 读出。
-    并且 fd[1] 一端只能进行写操作，fd[0] 一端只能进行读操作，不能反过来使用。要实现双向数据传输，可以使用两个管道。
-    */
-    if(pipe(pipe_fd) == -1) {
-        perror("pipe");
-        exit(EXIT_FAILURE);
-     }
-    if(pipe(pipe_err) == -1) {
- 	    perror("pipe");
-	    exit(EXIT_FAILURE);
-    }
-
-    pid = fork();
-    /*
-    这个地方要判断pid是否为0是因为fork函数的实现原理，fork函数最后的return 0是子进程进行
-        的，所以进入这个判断的是子进程，而子进程返回的pid就是0，如果这个地方不加上该判断，子进
-        程也会进入该for循环来创造进程，子又生孙孙又生子，而我们只希望父进程来创建三个子进程，
-        所以加上了该判断
-    */
-
-    if(pid == -1) {
-        perror("fork");
-        exit(EXIT_FAILURE);
-    } else if(pid == 0) {
-        // 子进程执行目标程序，并将输出重定向到管道
-	    close(pipe_fd[0]);
-	    close(pipe_err[0]);
-  	    dup2(pipe_fd[1], STDOUT_FILENO);
-	    dup2(pipe_err[1], STDERR_FILENO);
-	    execl("/bin/sh", "sh", "-c", input, (char *) NULL);//shell 会将 -c 后的部分当做命令来执行。
-        exit(EXIT_FAILURE);
-    } else {
-        // 父进程等待子进程执行完成，并获取代码覆盖率
-        close(pipe_fd[1]);
-	    close(pipe_err[1]);
-        waitpid(pid, NULL, 0);
-
-        // 获取代码覆盖率
-        snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov ./target_program -b | head -n 2 | tail -1 | grep -o ‘..\\.[0-9][0-9]’");//用于格式化输出字符串，并将结果写入到指定的缓冲区
-        FILE *fp = popen(coverage_cmd, "r");//popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
-        if(fp == NULL) {
-            perror("popen");
-            exit(EXIT_FAILURE);
-        }
-
-        fgets(gcov_output, MAX_COVERAGE_SIZE, fp);
-        pclose(fp);
-        coverage = atof(gcov_output);//将字符串里的数字字符转化为整形数。返回整形值
-
-        // 获取目标程序的输出
-        int nbytes = read(pipe_fd[0], output, output_size - 1);
-        if(nbytes == -1) {
-            perror("read");
-            exit(EXIT_FAILURE);
-        }
-        output[nbytes] = '\0';
-
-	    // 获取目标程序的错误信息
-	    nbytes = read(pipe_err[0], error, MAX_ERROR_SIZE - 1);
-	    if(nbytes == -1) {
-    		perror("read");
-    		exit(EXIT_FAILURE);
-	    }
-	    error[nbytes] = '\0';
-
-        return coverage;
-    }
-}
 
 // 将测试结果保存到文件
 void save_test_result(char *seed, unsigned char *testcase, double coverage, char *error, char *output, int flag) {
@@ -219,17 +128,26 @@ void optimize_seed(char *seed, unsigned char *testcase) {
     strcpy(seed, testcase);
 }
 
+int newfz(int coverage, int max_coverage){
+    if(coverage>max_coverage) return 1;
+    else return 0;
+}
+
 int main(int argc, char *argv[]) {
     char seed[MAX_SEED_SIZE];
     char input[MAX_INPUT_SIZE];
     char output[MAX_INPUT_SIZE];
     char error[MAX_ERROR_SIZE];
+    unsigned char testcase[MAX_SEED_SIZE];
     double coverage = 0;
     double max_coverage = 0;
     int i = 0;
     int pipe_fd[2];
     int pipe_err[2];
-
+    char coverage_cmd[MAX_INPUT_SIZE];
+    char gcov_output[MAX_COVERAGE_SIZE];
+    pid_t pid;
+    snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov ./target_program -b | head -n 2 | tail -1 | grep -o '..\\.[0-9][0-9]'");//用于格式化输出字符串，并将结果写入到指定的缓冲区
     // 检查命令行参数
     if(argc < 2) {
         fprintf(stderr, "Usage: %s target_program\n", argv[0]);
@@ -256,38 +174,96 @@ int main(int argc, char *argv[]) {
     generate_seed(seed);
     //strcpy(seed,"0xaa");
 
-    //printf("1\n");
-    unsigned char testcase[MAX_SEED_SIZE];
     mutate(seed, testcase);
-    //printf("2\n");
-    // 根据种子生成随机输入，并执行目标程序，获取代码覆盖率和输出
-    max_coverage = run_target_program(testcase, input, MAX_INPUT_SIZE, output, MAX_INPUT_SIZE, error, pipe_fd, pipe_err);
-    //printf("3\n");
-    save_test_result(seed, testcase, coverage, error, output, 0);
-    //printf("4\n");
-    for(;i<10000;i++) {
-	  printf("%d\n",i);
 
-        unsigned char testcase[MAX_SEED_SIZE];
-        mutate(seed, testcase);
+    if(pipe(pipe_fd) == -1) {
+        perror("pipe");
+        exit(EXIT_FAILURE);
+    }
+    if(pipe(pipe_err) == -1) {
+ 	  perror("pipe");
+	  exit(EXIT_FAILURE);
+    }snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov ./target_program -b | head -n 2 | tail -1 | grep -o '..\\.[0-9][0-9]'");//用于格式化输出字符串，并将结果写入到指定的缓冲区
+    for (i = 0; i < 10000; i++) {
+        pid_t pid = fork();
+        if (pid == 0) {
+            // 子进程执行代码
+            close(pipe_fd[0]);
+            close(pipe_err[0]);
+            dup2(pipe_fd[1], STDOUT_FILENO);
+            dup2(pipe_err[1], STDERR_FILENO);
+            execl("./target_program", "target_program", testcase, NULL);
 
-        // 根据种子生成随机输入，并执行目标程序，获取代码覆盖率和输出
-        coverage = run_target_program(seed, input, MAX_INPUT_SIZE, output, MAX_INPUT_SIZE, error, pipe_fd, pipe_err);
+            // 如果execl调用失败，则打印错误信息并退出子进程
+            perror("exec failed");
+            exit(1);
+        } else if (pid > 0) {
+            // 父进程等待子进程结束并处理僵尸进程
+            int status;
+            waitpid(pid, &status, 0);
+            if (WIFEXITED(status)) {//如果子进程正常退出（通过调用 exit 或返回 main 函数），WIFEXITED(status) 将返回非零值
+                int exit_status = WEXITSTATUS(status);//可以使用 WEXITSTATUS(status) 获取子进程的退出状态码。
+                if (exit_status == 0) { //子进程正常执行完毕
+                    //printf("Child process exited with non-zero status: %d\n", exit_status);
+                        // 获取代码覆盖率
+                    FILE *fp = popen(coverage_cmd, "r");//popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
+                    if(fp == NULL) {
+                        perror("popen");
+                        exit(EXIT_FAILURE);
+                    }
 
-        if(coverage > max_coverage){
-            // 将当前种子与覆盖率传给optimize_seed函数，由该函数进行记录与优化种子
-            max_coverage = coverage;
-            save_test_result(seed, testcase, coverage, error, output , 0);
-            optimize_seed(seed, testcase);
+                    fgets(gcov_output, MAX_COVERAGE_SIZE, fp);
+                    pclose(fp);
+                    coverage = atof(gcov_output);//将字符串里的数字字符转化为整形数。返回整形值
+
+                        // 获取目标程序的输出
+                    int nbytes = read(pipe_fd[0], output, MAX_INPUT_SIZE - 1);
+                    if(nbytes == -1) {
+                        perror("read");
+                        exit(EXIT_FAILURE);
+                    }
+                    output[nbytes] = '\0';
+
+                        // 获取目标程序的错误信息
+                    nbytes = read(pipe_err[0], error, MAX_ERROR_SIZE - 1);
+                    if(nbytes == -1) {
+                        perror("read");
+                        exit(EXIT_FAILURE);
+                    }
+                    error[nbytes] = '\0';
+
+                          // 判断是否出现新的分支
+                    if(newfz(coverage, max_coverage)){//如果出现了新的分支
+                               // 将当前种子与覆盖率传给optimize_seed函数，由该函数进行记录与优化种子
+                        max_coverage = coverage;
+                        save_test_result(seed, testcase, coverage, error, output , 0);
+                               //更新种子
+                        optimize_seed(seed, testcase);
+                               //更换测试用例
+                        mutate(seed, testcase);
+                    }else{
+                        if(error[0]!='\0'){
+                            save_test_result(seed, testcase, coverage, error, output , 1);
+                        }
+                               //更换测试用例
+                        mutate(seed, testcase);
+                    }
+                }else{//子进程execl调用失败，调用exit退出
+                    save_test_result(seed, testcase, coverage, error, output , 1);
+                    	       //更换测试用例
+                        mutate(seed, testcase);
+                }
+            } else if (WIFSIGNALED(status)) {//如果子进程是由于信号而终止的（例如通过调用 kill 函数），WIFSIGNALED(status) 将返回非零值。
+                int signal_num = WTERMSIG(status);//可以使用 WTERMSIG(status) 获取子进程终止的信号编号。
+                printf("Child process terminated by signal: %d\n", signal_num);
+
+            }
+        } else {
+            // 创建子进程失败的错误处理
+            perror("fork failed");
+            exit(1);
         }
-
-
-        // 添加代码 如果测试用例导致了错误，执行保存（未解决）
-        if(error[0]!='\0'){
-            // 将当前种子与覆盖率传给optimize_seed函数，由该函数进行记录与优化种子
-            save_test_result(seed, testcase, coverage, error, output , 1);
-        }
-   }
+    }
 
     return 0;
 }
