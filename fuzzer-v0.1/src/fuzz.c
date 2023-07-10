@@ -30,23 +30,27 @@ void generate_seed(char* seed) {
 
 // 利用种子进行变异，生成testcase用于执行target
 void mutate(char* seed, char* test_case) {
+    int i = 0;
     // Copy the seed to the test case
     strcpy(test_case, seed);
-
+    //printf("v1\n");
     // Get the length of the seed
     int seed_length = strlen(seed);
 
     // Randomly mutate the test case
     srand(time(NULL)); // Seed the random number generator
     int mutation_count = rand() % MAX_MUTATION_COUNT + 1; // Choose a random number of mutations
-    for (int i = 0; i < mutation_count; i++) {
+    //printf("v2\n");
+    for (i = 0; i < mutation_count; i++) {
         // Choose a random character to mutate
         int mutation_index = rand() % seed_length;
-
+        //printf("v3\n");
         // Randomly choose a mutation strategy
         int mutation_strategy = rand() % 4;
+        //printf("v4\n");
         switch (mutation_strategy) {
         case 0:
+		//printf("v5\n");
             // Flip the case of a letter
             if (seed[mutation_index] >= 'a' && seed[mutation_index] <= 'z') {
                 test_case[mutation_index] = seed[mutation_index] - 'a' + 'A';
@@ -55,10 +59,12 @@ void mutate(char* seed, char* test_case) {
             }
             break;
         case 1:
+		//printf("v6\n");
             // Replace a character with a random printable ASCII character
             test_case[mutation_index] = rand() % 94 + 32;
             break;
         case 2:
+		//printf("v7\n");
             // Insert a random printable ASCII character
             if (strlen(test_case) < MAX_TEST_CASE_LENGTH - 1) {
                 memmove(test_case + mutation_index + 1, test_case + mutation_index, strlen(test_case) - mutation_index + 1);
@@ -66,6 +72,7 @@ void mutate(char* seed, char* test_case) {
             }
             break;
         case 3:
+		//printf("v8\n");
             // Delete a character
             if (strlen(test_case) > 1) {
                 memmove(test_case + mutation_index, test_case + mutation_index + 1, strlen(test_case) - mutation_index);
@@ -76,7 +83,7 @@ void mutate(char* seed, char* test_case) {
 }
 
 // 根据种子生成随机输入，并执行目标程序
-double run_target_program(unsigned char *testcase, char *input, int input_size, char *output, int output_size, char *error) {
+double run_target_program(unsigned char *testcase, char *input, int input_size, char *output, int output_size, char *error, int *pipe_fd, int *pipe_err) {
     double coverage = 0;
     char coverage_cmd[MAX_INPUT_SIZE];
     char gcov_output[MAX_COVERAGE_SIZE];
@@ -93,9 +100,10 @@ double run_target_program(unsigned char *testcase, char *input, int input_size, 
     snprintf(input, input_size, "echo %s | ./target_program", testcase);
 
     // 执行目标程序，并获取输出
-    int pipe_fd[2];
+    /*int pipe_fd[2];
     int pipe_err[2];
 
+	*/
     /*
     该函数成功时返回0，并将一对打开的文件描述符值填入fd参数指向的数组。失败时返回 -1并设置errno。
     通过pipe函数创建的这两个文件描述符 fd[0] 和 fd[1] 分别构成管道的两端，往 fd[1] 写入的数据可以从 fd[0] 读出。
@@ -136,7 +144,7 @@ double run_target_program(unsigned char *testcase, char *input, int input_size, 
         waitpid(pid, NULL, 0);
 
         // 获取代码覆盖率
-        snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov ./target_program -b | head -n 2 | tail -1 | grep -o "..\.[0-9][0-9]"");//用于格式化输出字符串，并将结果写入到指定的缓冲区
+        snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov ./target_program -b | head -n 2 | tail -1 | grep -o ‘..\\.[0-9][0-9]’");//用于格式化输出字符串，并将结果写入到指定的缓冲区
         FILE *fp = popen(coverage_cmd, "r");//popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
         if(fp == NULL) {
             perror("popen");
@@ -170,12 +178,12 @@ double run_target_program(unsigned char *testcase, char *input, int input_size, 
 // 将测试结果保存到文件
 void save_test_result(char *seed, unsigned char *testcase, double coverage, char *error, char *output, int flag) {
     char filename[MAX_INPUT_SIZE];
-/*
+
     printf("seed:%s\n",seed);
     printf("coverage:%d\n",coverage);
     printf("error:%s\n",error);
     printf("output:%s\n",output);
-*/
+    printf("flag:%d\n",flag);
     if(flag == 0 ){
 	    snprintf(filename, MAX_INPUT_SIZE, "./out/queue/test_result_%s.txt", seed);
 	    FILE *fp = fopen(filename, "w");
@@ -183,8 +191,8 @@ void save_test_result(char *seed, unsigned char *testcase, double coverage, char
         	perror("fopen");
         	exit(EXIT_FAILURE);
     	}
-	    fprintf(fp, "Seed: %s\n", seed);
-        fprintf(fp, "Testcase: %s\n", testcase);
+	fprintf(fp, "Seed: %s\n", seed);
+      fprintf(fp, "Testcase: %s\n", testcase);
     	fprintf(fp, "Coverage: %lf\n", coverage);
     	fprintf(fp, "Error: %s\n", error);
     	fprintf(fp, "Output: %s\n", output);
@@ -197,8 +205,8 @@ void save_test_result(char *seed, unsigned char *testcase, double coverage, char
         	perror("fopen");
         	exit(EXIT_FAILURE);
     	}
-	    fprintf(fp, "Seed: %s\n", seed);
-        fprintf(fp, "Testcase: %s\n", testcase);
+	fprintf(fp, "Seed: %s\n", seed);
+      fprintf(fp, "Testcase: %s\n", testcase);
     	fprintf(fp, "Coverage: %lf\n", coverage);
     	fprintf(fp, "Error: %s\n", error);
     	fprintf(fp, "Output: %s\n", output);
@@ -219,7 +227,8 @@ int main(int argc, char *argv[]) {
     double coverage = 0;
     double max_coverage = 0;
     int i = 0;
-
+    int pipe_fd[2];
+    int pipe_err[2];
 
     // 检查命令行参数
     if(argc < 2) {
@@ -247,19 +256,23 @@ int main(int argc, char *argv[]) {
     generate_seed(seed);
     //strcpy(seed,"0xaa");
 
-    unsigned char * testcase;
+    //printf("1\n");
+    unsigned char testcase[MAX_SEED_SIZE];
     mutate(seed, testcase);
+    //printf("2\n");
     // 根据种子生成随机输入，并执行目标程序，获取代码覆盖率和输出
-    max_coverage = run_target_program(testcase, input, MAX_INPUT_SIZE, output, MAX_INPUT_SIZE, error);
+    max_coverage = run_target_program(testcase, input, MAX_INPUT_SIZE, output, MAX_INPUT_SIZE, error, pipe_fd, pipe_err);
+    //printf("3\n");
     save_test_result(seed, testcase, coverage, error, output, 0);
-
+    //printf("4\n");
     for(;i<10000;i++) {
+	  printf("%d\n",i);
 
-        unsigned char * testcase;
+        unsigned char testcase[MAX_SEED_SIZE];
         mutate(seed, testcase);
 
         // 根据种子生成随机输入，并执行目标程序，获取代码覆盖率和输出
-        coverage = run_target_program(seed, input, MAX_INPUT_SIZE, output, MAX_INPUT_SIZE, error);
+        coverage = run_target_program(seed, input, MAX_INPUT_SIZE, output, MAX_INPUT_SIZE, error, pipe_fd, pipe_err);
 
         if(coverage > max_coverage){
             // 将当前种子与覆盖率传给optimize_seed函数，由该函数进行记录与优化种子
@@ -278,4 +291,3 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
-
