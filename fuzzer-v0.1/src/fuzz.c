@@ -89,7 +89,7 @@ void save_test_result(char *seed, unsigned char *testcase, double coverage, char
     char filename[MAX_INPUT_SIZE];
 
     printf("seed:%s\n",seed);
-    printf("coverage:%d\n",coverage);
+    printf("coverage:%lf\n",coverage);
     printf("error:%s\n",error);
     printf("output:%s\n",output);
     printf("flag:%d\n",flag);
