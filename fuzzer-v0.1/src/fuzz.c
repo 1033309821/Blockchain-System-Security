@@ -185,9 +185,6 @@ int main(int argc, char *argv[])
     strcpy(seed,argv[2]);
     strcpy(testcase,argv[2]);
 
-     strcpy(seed,"0xww");
-     strcpy(testcase,"0xww");
-
     if (pipe(pipe_fd) == -1)
     {
         perror("pipe");
