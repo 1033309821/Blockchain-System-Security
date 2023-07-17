@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <errno.h>
 
 #define MAX_INPUT_SIZE 1024
 #define MAX_ERROR_SIZE 1024
@@ -137,14 +138,6 @@ int newfz(int coverage, int max_coverage)
         return 0;
 }
 
-volatile sig_atomic_t signal_received = 0;
-
-// 自定义信号处理函数
-void signal_handler(int signum)
-{
-    signal_received = 1;
-}
-
 int main(int argc, char *argv[])
 {
     char seed[MAX_SEED_SIZE];
@@ -157,11 +150,13 @@ int main(int argc, char *argv[])
     int i = 0;
     int pipe_fd[2];
     int pipe_err[2];
+    int flag_fd;
+    int flag_err;
+    int ret;
     char coverage_cmd[MAX_INPUT_SIZE];
     char gcov_output[MAX_COVERAGE_SIZE];
 
     pid_t pid;
-    int jc_flag = 0;
     snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov ./target_program -b | head -n 2 | tail -1 | grep -Eo '[0-9]{1,2}\\.[0-9]{2}|100\\.00'"); // 用于格式化输出字符串，并将结果写入到指定的缓冲区
     // 检查命令行参数
     if (argc < 2)
@@ -190,6 +185,9 @@ int main(int argc, char *argv[])
     strcpy(seed,argv[2]);
     strcpy(testcase,argv[2]);
 
+     strcpy(seed,"0xww");
+     strcpy(testcase,"0xww");
+
     if (pipe(pipe_fd) == -1)
     {
         perror("pipe");
@@ -200,11 +198,7 @@ int main(int argc, char *argv[])
         perror("pipe");
         exit(EXIT_FAILURE);
     }
-    if (signal(SIGUSR1, signal_handler) == SIG_ERR)
-    {
-        perror("signal failed");
-        exit(1);
-    }
+  
 
     for (i = 0; i < 2; i++)
     {
@@ -222,7 +216,6 @@ int main(int argc, char *argv[])
             dup2(pipe_err[1], STDERR_FILENO);
 
             snprintf(input, MAX_INPUT_SIZE, "echo %s | ./target_program", testcase);
-            kill(getppid(), SIGUSR1);                          // 向父进程发送信号
             execl("/bin/sh", "sh", "-c", input, (char *)NULL); // shell 会将 -c 后的部分当做命令来执行。
             // execl("./target_program", "target_program", testcase, NULL);
 
@@ -233,13 +226,9 @@ int main(int argc, char *argv[])
         else if (pid > 0)
         {
             // 父进程等待子进程结束并处理僵尸进程
-            while (!signal_received);
-            printf("father i :%d\n", i);
-            printf("signal_received:%d\n", signal_received);
             int status;
             waitpid(pid, &status, 0);
-            close(pipe_fd[1]);
-            close(pipe_err[1]);
+            printf("father i :%d\n", i);
 
             if (WIFEXITED(status))
             {                                          // 如果子进程正常退出（通过调用 exit 或返回 main 函数），WIFEXITED(status) 将返回非零值
@@ -258,31 +247,61 @@ int main(int argc, char *argv[])
                 pclose(fp);
                 coverage = atof(gcov_output); // 将字符串里的数字字符转化为浮点数。返回浮点值
 
-                // 获取目标程序的输出
-                int nbytes = read(pipe_fd[0], output, MAX_INPUT_SIZE - 1);
-                if (nbytes == -1)
-                {
-                    perror("read");
-                    exit(EXIT_FAILURE);
+                // 获取文件描述符的当前标志
+                flag_fd = fcntl(pipe_fd[0], F_GETFL);
+                if (flag_fd == -1) {
+                    perror("fcntl error");
+                    exit(1);
                 }
-                output[nbytes] = '\0';
+                flag_err = fcntl(pipe_err[0], F_GETFL);
+                if (flag_err == -1) {
+                    perror("fcntl error");
+                    exit(1);
+                }
+                // 设置文件描述符为非阻塞模式
+                flag_fd |= O_NONBLOCK;
+                ret = fcntl(pipe_fd[0], F_SETFL, flag_fd);
+                if (ret == -1) {
+                    perror("fcntl error");
+                    exit(1);
+                }
+                flag_err |= O_NONBLOCK;
+                ret = fcntl(pipe_err[0], F_SETFL, flag_err);
+                if (ret == -1) {
+                    perror("fcntl error");
+                    exit(1);
+                }
+                // 获取目标程序的输出
+                ret = read(pipe_fd[0], output, MAX_INPUT_SIZE - 1);
+                if (ret == -1 && errno == EAGAIN) {
+                    // 没有数据可读的非阻塞处理
+                    printf("output:%s\n", output);
+                }else if (ret == -1) {
+                    perror("read error");
+                    exit(1);
+                }else{
+                    printf("output:%s\n", output);
+                    output[ret] = '\0';
+                }
+                
 
                 // 获取目标程序的错误信息
-                nbytes = read(pipe_err[0], error, MAX_ERROR_SIZE - 1);
-                if (nbytes == -1)
-                {
-                    perror("read");
-                    exit(EXIT_FAILURE);
+                ret = read(pipe_err[0], error, MAX_INPUT_SIZE - 1);
+                if (ret == -1 && errno == EAGAIN) {
+                    // 没有数据可读的非阻塞处理
+                    printf("error:%s\n", error);
+                }else if (ret == -1) {
+                    perror("read error");
+                    exit(1);
+                }else{
+                    printf("error:%s\n", error);
+                    error[ret] = '\0';
                 }
-                error[nbytes] = '\0';
-
+            
                 printf("coverage:%lf\n", coverage);
-                printf("error:%s\n", error);
-                printf("output:%s\n\n", output);
-
+            
                 // 判断是否出现新的分支
-                if (newfz(coverage, max_coverage))
-                { // 如果出现了新的分支
+                if (newfz(coverage, max_coverage)){ // 如果出现了新的分支
                   // 将当前种子与覆盖率传给optimize_seed函数，由该函数进行记录与优化种子
                     max_coverage = coverage;
                     save_test_result(seed, testcase, coverage, error, output, 0);
@@ -294,28 +313,59 @@ int main(int argc, char *argv[])
                     save_test_result(seed, testcase, coverage, error, output, 1);
                 }
             }
-            else if (WIFSIGNALED(status))
-            {                                      // 如果子进程是由于信号而终止的（例如通过调用 kill 函数），WIFSIGNALED(status) 将返回非零值。
+            else if (WIFSIGNALED(status)){ // 如果子进程是由于信号而终止的（例如通过调用 kill 函数），WIFSIGNALED(status) 将返回非零值。
                 int signal_num = WTERMSIG(status); // 可以使用 WTERMSIG(status) 获取子进程终止的信号编号。
 
-                // 获取目标程序的输出
-                int nbytes = read(pipe_fd[0], output, MAX_INPUT_SIZE - 1);
-                if (nbytes == -1)
-                {
-                    perror("read");
-                    exit(EXIT_FAILURE);
+                // 获取文件描述符的当前标志
+                flag_fd = fcntl(pipe_fd[0], F_GETFL);
+                if (flag_fd == -1) {
+                    perror("fcntl error");
+                    exit(1);
                 }
-                output[nbytes] = '\0';
+                flag_err = fcntl(pipe_err[0], F_GETFL);
+                if (flag_err == -1) {
+                    perror("fcntl error");
+                    exit(1);
+                }
+                // 设置文件描述符为非阻塞模式
+                flag_fd |= O_NONBLOCK;
+                ret = fcntl(pipe_fd[0], F_SETFL, flag_fd);
+                if (ret == -1) {
+                    perror("fcntl error");
+                    exit(1);
+                }
+                flag_err |= O_NONBLOCK;
+                ret = fcntl(pipe_err[0], F_SETFL, flag_err);
+                if (ret == -1) {
+                    perror("fcntl error");
+                    exit(1);
+                }
+                // 获取目标程序的输出
+                ret = read(pipe_fd[0], output, MAX_INPUT_SIZE - 1);
+                if (ret == -1 && errno == EAGAIN) {
+                    // 没有数据可读的非阻塞处理
+                    printf("output:%s\n", output);
+                }else if (ret == -1) {
+                    perror("read error");
+                    exit(1);
+                }else{
+                    printf("output:%s\n", output);
+                    output[ret] = '\0';
+                }
+                
 
                 // 获取目标程序的错误信息
-                nbytes = read(pipe_err[0], error, MAX_ERROR_SIZE - 1);
-                if (nbytes == -1)
-                {
-                    perror("read");
-                    exit(EXIT_FAILURE);
+                ret = read(pipe_err[0], error, MAX_INPUT_SIZE - 1);
+                if (ret == -1 && errno == EAGAIN) {
+                    // 没有数据可读的非阻塞处理
+                    printf("error:%s\n", error);
+                }else if (ret == -1) {
+                    perror("read error");
+                    exit(1);
+                }else{
+                    printf("error:%s\n", error);
+                    error[ret] = '\0';
                 }
-
-                error[nbytes] = '\0';
 
                 printf("%d\n", i);
                 printf("seed:%s\n", seed);
@@ -334,10 +384,9 @@ int main(int argc, char *argv[])
             perror("fork failed");
             exit(1);
         }
-        // 需不需要初始化父进程用过的那些参数 例如：error，output等
-        signal_received = 0;
-        //strcpy(output, "")
-        //strcpy(error, "")
+        // 初始化父进程用过的那些参数 例如：error，output等
+        output[0]='\0';
+        error[0]='\0';
         coverage = 0;
 
         // 最后更新testcase
