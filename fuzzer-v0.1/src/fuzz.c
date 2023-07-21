@@ -80,7 +80,7 @@ void mutate(char *seed, char *test_case)
 }
 
 // 将测试结果保存到文件
-void save_test_result(char *seed, unsigned char *testcase, double coverage, char *error, char *output, int flag)
+void save_test_result(char *seed, unsigned char *testcase, double coverage, char *error, char *output, int flag, int signal_num)
 {
     char filename[MAX_INPUT_SIZE];
     /*
@@ -92,7 +92,7 @@ void save_test_result(char *seed, unsigned char *testcase, double coverage, char
         */
     if (flag == 0)
     {
-        snprintf(filename, MAX_INPUT_SIZE, "./out/queue/test_result_%s.txt", seed);
+        snprintf(filename, MAX_INPUT_SIZE, "./out/queue/test_result_%s.txt", testcase);
         FILE *fp = fopen(filename, "w");
         if (fp == NULL)
         {
@@ -103,12 +103,13 @@ void save_test_result(char *seed, unsigned char *testcase, double coverage, char
         fprintf(fp, "Testcase: %s\n", testcase);
         fprintf(fp, "Coverage: %lf\n", coverage);
         fprintf(fp, "Error: %s\n", error);
+        if(signal_num!=0)  fprintf(fp, "Signal: %d\n", signal_num);
         fprintf(fp, "Output: %s\n", output);
         fclose(fp);
     }
     else
     {
-        snprintf(filename, MAX_INPUT_SIZE, "./out/errors/test_result_%s.txt", seed);
+        snprintf(filename, MAX_INPUT_SIZE, "./out/errors/test_result_%s.txt", testcase);
         FILE *fp = fopen(filename, "w");
         if (fp == NULL)
         {
@@ -119,6 +120,7 @@ void save_test_result(char *seed, unsigned char *testcase, double coverage, char
         fprintf(fp, "Testcase: %s\n", testcase);
         fprintf(fp, "Coverage: %lf\n", coverage);
         fprintf(fp, "Error: %s\n", error);
+         if(signal_num!=0)  fprintf(fp, "Signal: %d\n", signal_num);
         fprintf(fp, "Output: %s\n", output);
         fclose(fp);
     }
@@ -157,7 +159,7 @@ int main(int argc, char *argv[])
     char gcov_output[MAX_COVERAGE_SIZE];
 
     pid_t pid;
-    snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov ./target_program -b | head -n 2 | tail -1 | grep -Eo '[0-9]{1,2}\\.[0-9]{2}|100\\.00'"); // 用于格式化输出字符串，并将结果写入到指定的缓冲区
+    snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov ./target_program-b | head -n 2 | tail -1 | grep -Eo '[0-9]{1,2}\\.[0-9]{2}|100\\.00'"); // 用于格式化输出字符串，并将结果写入到指定的缓冲区
     // 检查命令行参数
     if (argc < 2)
     {
@@ -185,6 +187,7 @@ int main(int argc, char *argv[])
     strcpy(seed,argv[2]);
     strcpy(testcase,argv[2]);
 
+   
     if (pipe(pipe_fd) == -1)
     {
         perror("pipe");
@@ -197,7 +200,7 @@ int main(int argc, char *argv[])
     }
   
 
-    for (i = 0; i < 2; i++)
+    for (i = 0; i < 100; i++)
     {
         pid = fork();
         if (pid == 0)
@@ -206,15 +209,18 @@ int main(int argc, char *argv[])
             close(pipe_fd[0]);
             close(pipe_err[0]);
 
-            printf("child process i:%d\n", i);
+            //printf("my pid is %d\n",getpid());
+
+            printf("process i:%d\n", i);
             printf("seed:%s\n", seed);
             printf("testcase:%s\n", testcase);
             dup2(pipe_fd[1], STDOUT_FILENO);
             dup2(pipe_err[1], STDERR_FILENO);
 
-            snprintf(input, MAX_INPUT_SIZE, "echo %s | ./target_program", testcase);
+            //char *args[] = {"target_program", testcase, NULL};
+            snprintf(input, MAX_INPUT_SIZE, "echo \"%s\" | ./target_program", testcase);
             execl("/bin/sh", "sh", "-c", input, (char *)NULL); // shell 会将 -c 后的部分当做命令来执行。
-            // execl("./target_program", "target_program", testcase, NULL);
+            //execv("./target_program", args);
 
             // 如果execl调用失败，则打印错误信息并退出子进程
             perror("exec failed");
@@ -225,7 +231,7 @@ int main(int argc, char *argv[])
             // 父进程等待子进程结束并处理僵尸进程
             int status;
             waitpid(pid, &status, 0);
-            printf("father i :%d\n", i);
+            //printf("father i :%d\n", i);
 
             if (WIFEXITED(status))
             {                                          // 如果子进程正常退出（通过调用 exit 或返回 main 函数），WIFEXITED(status) 将返回非零值
@@ -237,10 +243,9 @@ int main(int argc, char *argv[])
                     exit(EXIT_FAILURE);
                 }
 
-                printf("parent process i:%d\n", i);
+                //printf("parent process i:%d\n", i);
 
                 fgets(gcov_output, MAX_COVERAGE_SIZE, fp);
-                printf("gcov_output=%s", gcov_output);
                 pclose(fp);
                 coverage = atof(gcov_output); // 将字符串里的数字字符转化为浮点数。返回浮点值
 
@@ -272,12 +277,12 @@ int main(int argc, char *argv[])
                 ret = read(pipe_fd[0], output, MAX_INPUT_SIZE - 1);
                 if (ret == -1 && errno == EAGAIN) {
                     // 没有数据可读的非阻塞处理
-                    printf("output:%s\n", output);
+                    //printf("output:%s\n", output);
                 }else if (ret == -1) {
                     perror("read error");
                     exit(1);
                 }else{
-                    printf("output:%s\n", output);
+                    //printf("output:%s\n", output);
                     output[ret] = '\0';
                 }
                 
@@ -295,23 +300,37 @@ int main(int argc, char *argv[])
                     error[ret] = '\0';
                 }
             
-                printf("coverage:%lf\n", coverage);
+                printf("coverage:%lf\n\n", coverage);
             
                 // 判断是否出现新的分支
                 if (newfz(coverage, max_coverage)){ // 如果出现了新的分支
                   // 将当前种子与覆盖率传给optimize_seed函数，由该函数进行记录与优化种子
                     max_coverage = coverage;
-                    save_test_result(seed, testcase, coverage, error, output, 0);
+                    save_test_result(seed, testcase, coverage, error, output, 0, 0);
                     // 更新种子
                     optimize_seed(seed, testcase);
                 }
                 //判断程序错误
                 if (error[0] != '\0'){
-                    save_test_result(seed, testcase, coverage, error, output, 1);
+                    save_test_result(seed, testcase, coverage, error, output, 1, 0);
                 }
             }
             else if (WIFSIGNALED(status)){ // 如果子进程是由于信号而终止的（例如通过调用 kill 函数），WIFSIGNALED(status) 将返回非零值。
                 int signal_num = WTERMSIG(status); // 可以使用 WTERMSIG(status) 获取子进程终止的信号编号。
+
+                //  获取代码覆盖率
+                FILE *fp = popen(coverage_cmd, "r"); // popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
+                if (fp == NULL)
+                {
+                    perror("popen");
+                    exit(EXIT_FAILURE);
+                }
+
+                //printf("parent process i:%d\n", i);
+
+                fgets(gcov_output, MAX_COVERAGE_SIZE, fp);
+                pclose(fp);
+                coverage = atof(gcov_output); // 将字符串里的数字字符转化为浮点数。返回浮点值
 
                 // 获取文件描述符的当前标志
                 flag_fd = fcntl(pipe_fd[0], F_GETFL);
@@ -341,12 +360,12 @@ int main(int argc, char *argv[])
                 ret = read(pipe_fd[0], output, MAX_INPUT_SIZE - 1);
                 if (ret == -1 && errno == EAGAIN) {
                     // 没有数据可读的非阻塞处理
-                    printf("output:%s\n", output);
+                    //printf("output:%s\n", output);
                 }else if (ret == -1) {
                     perror("read error");
                     exit(1);
                 }else{
-                    printf("output:%s\n", output);
+                    //printf("output:%s\n", output);
                     output[ret] = '\0';
                 }
                 
@@ -364,15 +383,18 @@ int main(int argc, char *argv[])
                     error[ret] = '\0';
                 }
 
+                /*
                 printf("%d\n", i);
                 printf("seed:%s\n", seed);
                 printf("testcase:%s\n", testcase);
                 printf("coverage:%lf\n", coverage);
                 printf("error:%s\n", error);
-                printf("output:%s\n", output);
-                // printf("Child process terminated by signal: %d\n", signal_num);
-                // 获取目标程序的错误信息
-                save_test_result(seed, testcase, coverage, error, output, 1);
+                */
+                //printf("output:%s\n", output);
+                
+                // 保存信息
+                save_test_result(seed, testcase, coverage, error, output, 1, signal_num);
+                
             }
         }
         else
@@ -387,8 +409,8 @@ int main(int argc, char *argv[])
         coverage = 0;
 
         // 最后更新testcase
-        //mutate(seed, testcase);
-        strcpy(testcase, "0xaa");
+        mutate(seed, testcase);
+        //strcpy(testcase, "0xaa");
     }
 
     return 0;
