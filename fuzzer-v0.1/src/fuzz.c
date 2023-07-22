@@ -79,6 +79,7 @@ void mutate(char *seed, char *test_case)
     }
 }
 
+
 // 将测试结果保存到文件
 void save_test_result(char *seed, unsigned char *testcase, double coverage, char *error, char *output, int flag, int signal_num)
 {
@@ -140,69 +141,123 @@ int newfz(int coverage, int max_coverage)
         return 0;
 }
 
-int main(int argc, char *argv[])
+void asan_target_program(char *seed, unsigned char *testcase)
 {
-    char seed[MAX_SEED_SIZE];
-    char input[MAX_INPUT_SIZE];
-    char output[MAX_INPUT_SIZE];
-    char error[MAX_ERROR_SIZE];
-    unsigned char testcase[MAX_SEED_SIZE];
+    char input1[MAX_INPUT_SIZE];
+    char input2[MAX_INPUT_SIZE];
+    snprintf(input1, MAX_INPUT_SIZE, "gcc -fsanitize=address -g -o target_program_asan target_program.c");
+    FILE *fp = popen(input1, "r"); // popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
+    if (fp == NULL)
+    {
+        perror("asan命令1执行失败");
+        exit(EXIT_FAILURE);
+    }
+    snprintf(input2, MAX_INPUT_SIZE, "echo \"%s\" | ./target_program_asan 2> ./out/asan/seed:%s_testcase:%s.txt", testcase, seed, testcase);
+    fp = popen(input2, "r"); // popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
+    if (fp == NULL)
+    {
+        perror("asan命令2执行失败");
+        exit(EXIT_FAILURE);
+    }
+
+}
+
+void getdata(char *coverage_cmd, int signal_num, int *pipe_fd, int *pipe_err, char *seed, unsigned char *testcase, double *max_coverage)
+{
     double coverage = 0;
-    double max_coverage = 0;
-    int i = 0;
-    int pipe_fd[2];
-    int pipe_err[2];
+    char gcov_output[MAX_COVERAGE_SIZE] ;
+    char output[MAX_COVERAGE_SIZE] = "";
+    char error[MAX_COVERAGE_SIZE] = "";
     int flag_fd;
     int flag_err;
     int ret;
-    char coverage_cmd[MAX_INPUT_SIZE];
-    char gcov_output[MAX_COVERAGE_SIZE];
 
-    pid_t pid;
-    snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov ./target_program-b | head -n 2 | tail -1 | grep -Eo '[0-9]{1,2}\\.[0-9]{2}|100\\.00'"); // 用于格式化输出字符串，并将结果写入到指定的缓冲区
-    // 检查命令行参数
-    if (argc < 2)
+    //  获取代码覆盖率
+    FILE *fp = popen(coverage_cmd, "r"); // popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
+    if (fp == NULL)
     {
-        fprintf(stderr, "Usage: %s target_program\n", argv[0]);
+        perror("popen");
         exit(EXIT_FAILURE);
     }
-    mkdir("./out", 0775);
-    mkdir("./out/queue", 0775);
-    mkdir("./out/errors", 0775);
-    /*
-        for(;i<argc;i++){
-          strcpy( seed, *(argv+i));
-            // 根据种子生成随机输入，并执行目标程序，获取代码覆盖率和输出
-            coverage = run_target_program(seed, input, MAX_INPUT_SIZE, output, MAX_INPUT_SIZE, error);
 
-            // 将测试结果保存到文件
-            save_test_result(seed, coverage, error, output);
-        }
+    //printf("parent process i:%d\n", i);
 
-    */
-    // 设置随机数种子
-    srand(time(NULL));
+    fgets(gcov_output, MAX_COVERAGE_SIZE, fp);
+    pclose(fp);
+    coverage = atof(gcov_output); // 将字符串里的数字字符转化为浮点数。返回浮点值
 
-    // mutate(seed, testcase);
-    strcpy(seed,argv[2]);
-    strcpy(testcase,argv[2]);
-
-   
-    if (pipe(pipe_fd) == -1)
-    {
-        perror("pipe");
-        exit(EXIT_FAILURE);
+    // 获取文件描述符的当前标志
+    flag_fd = fcntl(pipe_fd[0], F_GETFL);
+    if (flag_fd == -1) {
+        perror("fcntl error");
+        exit(1);
     }
-    if (pipe(pipe_err) == -1)
-    {
-        perror("pipe");
-        exit(EXIT_FAILURE);
+    flag_err = fcntl(pipe_err[0], F_GETFL);
+    if (flag_err == -1) {
+        perror("fcntl error");
+        exit(1);
     }
-  
+    // 设置文件描述符为非阻塞模式
+    flag_fd |= O_NONBLOCK;
+    ret = fcntl(pipe_fd[0], F_SETFL, flag_fd);
+    if (ret == -1) {
+        perror("fcntl error");
+        exit(1);
+    }
+    flag_err |= O_NONBLOCK;
+    ret = fcntl(pipe_err[0], F_SETFL, flag_err);
+    if (ret == -1) {
+        perror("fcntl error");
+        exit(1);
+    }
+    // 获取目标程序的输出
+    ret = read(pipe_fd[0], output, MAX_INPUT_SIZE - 1);
+    if (ret == -1 && errno == EAGAIN) {
+        // 没有数据可读的非阻塞处理
+        //printf("output:%s\n", output);
+    }else if (ret == -1) {
+        perror("read error");
+        exit(1);
+    }else{
+        //printf("output:%s\n", output);
+        output[ret] = '\0';
+    }
 
-    for (i = 0; i < 100; i++)
-    {
-        pid = fork();
+    // 获取目标程序的错误信息
+    ret = read(pipe_err[0], error, MAX_INPUT_SIZE - 1);
+    if (ret == -1 && errno == EAGAIN) {
+        // 没有数据可读的非阻塞处理
+        printf("error:%s\n", error);
+    }else if (ret == -1) {
+        perror("read error");
+        exit(1);
+    }else{
+        printf("error:%s\n", error);
+        error[ret] = '\0';
+    }
+
+    printf("coverage:%lf\n\n", coverage);
+
+    // 判断是否出现新的分支
+    if (newfz(coverage, *max_coverage)){ // 如果出现了新的分支
+        // 将当前种子与覆盖率传给optimize_seed函数，由该函数进行记录与优化种子
+        *max_coverage = coverage;
+        save_test_result(seed, testcase, coverage, error, output, 0, signal_num);
+        // 更新种子
+        optimize_seed(seed, testcase);
+    }
+    //判断程序错误
+    if (error[0] != '\0' || signal_num!= 0){
+        save_test_result(seed, testcase, coverage, error, output, 1, signal_num);
+        asan_target_program(seed, testcase);
+    }
+}
+
+void run_target_program(int *pipe_fd, int *pipe_err, int i, char *coverage_cmd, char *seed, unsigned char *testcase, double *max_coverage)
+{
+    char input[MAX_INPUT_SIZE];
+    pid_t pid = fork();
+
         if (pid == 0)
         {
             // 子进程执行代码
@@ -235,166 +290,11 @@ int main(int argc, char *argv[])
 
             if (WIFEXITED(status))
             {                                          // 如果子进程正常退出（通过调用 exit 或返回 main 函数），WIFEXITED(status) 将返回非零值
-                //  获取代码覆盖率
-                FILE *fp = popen(coverage_cmd, "r"); // popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
-                if (fp == NULL)
-                {
-                    perror("popen");
-                    exit(EXIT_FAILURE);
-                }
-
-                //printf("parent process i:%d\n", i);
-
-                fgets(gcov_output, MAX_COVERAGE_SIZE, fp);
-                pclose(fp);
-                coverage = atof(gcov_output); // 将字符串里的数字字符转化为浮点数。返回浮点值
-
-                // 获取文件描述符的当前标志
-                flag_fd = fcntl(pipe_fd[0], F_GETFL);
-                if (flag_fd == -1) {
-                    perror("fcntl error");
-                    exit(1);
-                }
-                flag_err = fcntl(pipe_err[0], F_GETFL);
-                if (flag_err == -1) {
-                    perror("fcntl error");
-                    exit(1);
-                }
-                // 设置文件描述符为非阻塞模式
-                flag_fd |= O_NONBLOCK;
-                ret = fcntl(pipe_fd[0], F_SETFL, flag_fd);
-                if (ret == -1) {
-                    perror("fcntl error");
-                    exit(1);
-                }
-                flag_err |= O_NONBLOCK;
-                ret = fcntl(pipe_err[0], F_SETFL, flag_err);
-                if (ret == -1) {
-                    perror("fcntl error");
-                    exit(1);
-                }
-                // 获取目标程序的输出
-                ret = read(pipe_fd[0], output, MAX_INPUT_SIZE - 1);
-                if (ret == -1 && errno == EAGAIN) {
-                    // 没有数据可读的非阻塞处理
-                    //printf("output:%s\n", output);
-                }else if (ret == -1) {
-                    perror("read error");
-                    exit(1);
-                }else{
-                    //printf("output:%s\n", output);
-                    output[ret] = '\0';
-                }
-                
-
-                // 获取目标程序的错误信息
-                ret = read(pipe_err[0], error, MAX_INPUT_SIZE - 1);
-                if (ret == -1 && errno == EAGAIN) {
-                    // 没有数据可读的非阻塞处理
-                    printf("error:%s\n", error);
-                }else if (ret == -1) {
-                    perror("read error");
-                    exit(1);
-                }else{
-                    printf("error:%s\n", error);
-                    error[ret] = '\0';
-                }
-            
-                printf("coverage:%lf\n\n", coverage);
-            
-                // 判断是否出现新的分支
-                if (newfz(coverage, max_coverage)){ // 如果出现了新的分支
-                  // 将当前种子与覆盖率传给optimize_seed函数，由该函数进行记录与优化种子
-                    max_coverage = coverage;
-                    save_test_result(seed, testcase, coverage, error, output, 0, 0);
-                    // 更新种子
-                    optimize_seed(seed, testcase);
-                }
-                //判断程序错误
-                if (error[0] != '\0'){
-                    save_test_result(seed, testcase, coverage, error, output, 1, 0);
-                }
+                getdata(coverage_cmd, 0, pipe_fd, pipe_err, seed, testcase, max_coverage);
             }
             else if (WIFSIGNALED(status)){ // 如果子进程是由于信号而终止的（例如通过调用 kill 函数），WIFSIGNALED(status) 将返回非零值。
                 int signal_num = WTERMSIG(status); // 可以使用 WTERMSIG(status) 获取子进程终止的信号编号。
-
-                //  获取代码覆盖率
-                FILE *fp = popen(coverage_cmd, "r"); // popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
-                if (fp == NULL)
-                {
-                    perror("popen");
-                    exit(EXIT_FAILURE);
-                }
-
-                //printf("parent process i:%d\n", i);
-
-                fgets(gcov_output, MAX_COVERAGE_SIZE, fp);
-                pclose(fp);
-                coverage = atof(gcov_output); // 将字符串里的数字字符转化为浮点数。返回浮点值
-
-                // 获取文件描述符的当前标志
-                flag_fd = fcntl(pipe_fd[0], F_GETFL);
-                if (flag_fd == -1) {
-                    perror("fcntl error");
-                    exit(1);
-                }
-                flag_err = fcntl(pipe_err[0], F_GETFL);
-                if (flag_err == -1) {
-                    perror("fcntl error");
-                    exit(1);
-                }
-                // 设置文件描述符为非阻塞模式
-                flag_fd |= O_NONBLOCK;
-                ret = fcntl(pipe_fd[0], F_SETFL, flag_fd);
-                if (ret == -1) {
-                    perror("fcntl error");
-                    exit(1);
-                }
-                flag_err |= O_NONBLOCK;
-                ret = fcntl(pipe_err[0], F_SETFL, flag_err);
-                if (ret == -1) {
-                    perror("fcntl error");
-                    exit(1);
-                }
-                // 获取目标程序的输出
-                ret = read(pipe_fd[0], output, MAX_INPUT_SIZE - 1);
-                if (ret == -1 && errno == EAGAIN) {
-                    // 没有数据可读的非阻塞处理
-                    //printf("output:%s\n", output);
-                }else if (ret == -1) {
-                    perror("read error");
-                    exit(1);
-                }else{
-                    //printf("output:%s\n", output);
-                    output[ret] = '\0';
-                }
-                
-
-                // 获取目标程序的错误信息
-                ret = read(pipe_err[0], error, MAX_INPUT_SIZE - 1);
-                if (ret == -1 && errno == EAGAIN) {
-                    // 没有数据可读的非阻塞处理
-                    printf("error:%s\n", error);
-                }else if (ret == -1) {
-                    perror("read error");
-                    exit(1);
-                }else{
-                    printf("error:%s\n", error);
-                    error[ret] = '\0';
-                }
-
-                /*
-                printf("%d\n", i);
-                printf("seed:%s\n", seed);
-                printf("testcase:%s\n", testcase);
-                printf("coverage:%lf\n", coverage);
-                printf("error:%s\n", error);
-                */
-                //printf("output:%s\n", output);
-                
-                // 保存信息
-                save_test_result(seed, testcase, coverage, error, output, 1, signal_num);
-                
+                getdata(coverage_cmd, signal_num, pipe_fd, pipe_err, seed, testcase, max_coverage);
             }
         }
         else
@@ -403,15 +303,84 @@ int main(int argc, char *argv[])
             perror("fork failed");
             exit(1);
         }
-        // 初始化父进程用过的那些参数 例如：error，output等
-        output[0]='\0';
-        error[0]='\0';
-        coverage = 0;
-
+        
         // 最后更新testcase
         mutate(seed, testcase);
         //strcpy(testcase, "0xaa");
-    }
+    
+}
 
+void open_pipe(int pipe_fd[2], int pipe_err[2])
+{
+     if (pipe(pipe_fd) == -1)
+    {
+        perror("pipe");
+        exit(EXIT_FAILURE);
+    }
+    if (pipe(pipe_err) == -1)
+    {
+        perror("pipe");
+        exit(EXIT_FAILURE);
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    char seed[MAX_SEED_SIZE];
+    unsigned char testcase[MAX_SEED_SIZE];
+    double coverage = 0;
+    double max_coverage = 0;
+    int i = 0;
+    int pipe_fd[2];
+    int pipe_err[2];
+    char coverage_cmd[MAX_INPUT_SIZE];
+    char input[MAX_INPUT_SIZE];
+    
+    snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov ./target_program -b | head -n 2 | tail -1 | grep -Eo '[0-9]{1,2}\\.[0-9]{2}|100\\.00'"); // 用于格式化输出字符串，并将结果写入到指定的缓冲区
+    // 检查命令行参数
+    if (argc < 2)
+    {
+        fprintf(stderr, "Usage: %s target_program\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+    mkdir("./out", 0775);
+    mkdir("./out/queue", 0775);
+    mkdir("./out/errors", 0775);
+    mkdir("./out/asan", 0775);
+    /*
+        for(;i<argc;i++){
+          strcpy( seed, *(argv+i));
+            // 根据种子生成随机输入，并执行目标程序，获取代码覆盖率和输出
+            coverage = run_target_program(seed, input, MAX_INPUT_SIZE, output, MAX_INPUT_SIZE, error);
+
+            // 将测试结果保存到文件
+            save_test_result(seed, coverage, error, output);
+        }
+
+    */
+    // 设置随机数种子
+    srand(time(NULL));
+
+    // mutate(seed, testcase);
+    strcpy(seed,argv[2]);
+    strcpy(testcase,argv[2]);
+
+    open_pipe(pipe_fd, pipe_err);
+    
+    snprintf(input, MAX_INPUT_SIZE, "gcc target_program.c -fprofile-arcs -ftest-coverage -o target_program");
+    FILE *fp = popen(input, "r"); // popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
+    if (fp == NULL)
+    {
+        perror("gcc插桩失败");
+        exit(EXIT_FAILURE);
+    }
+    
+    
+   
+
+    for (i = 0; i < 100; i++)
+    {
+         run_target_program(pipe_fd, pipe_err, i, coverage_cmd, seed, testcase, &max_coverage);
+    }
     return 0;
 }
