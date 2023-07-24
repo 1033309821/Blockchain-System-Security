@@ -136,13 +136,11 @@ void havoc(char *seed, size_t *seed_size)
 }
 
 // 变异种子函数
-size_t mutate(char *seed, char *mutated_seed, int mutate_flag)
+size_t mutate(char *mutated_seed, int mutate_flag)
 {
-    size_t seed_size = strlen(seed);
+    size_t seed_size = strlen(mutated_seed);
     int choose_mutate = 0;
     choose_mutate = mutate_flag % 6;
-    // 对原始种子进行复制
-    memcpy(mutated_seed, seed, seed_size + 1);
 
     switch (choose_mutate)
     {
@@ -177,7 +175,7 @@ size_t mutate(char *seed, char *mutated_seed, int mutate_flag)
 }
 
 // 将测试结果保存到文件
-void save_test_result(char *seed, unsigned char *testcase, double coverage, char *error, char *output, int flag, int signal_num)
+void save_test_result(unsigned char *testcase, double coverage, char *error, char *output, int flag, int signal_num)
 {
     char filename[MAX_INPUT_SIZE];
     /*
@@ -196,7 +194,6 @@ void save_test_result(char *seed, unsigned char *testcase, double coverage, char
             perror("fopen");
             exit(EXIT_FAILURE);
         }
-        fprintf(fp, "Seed: %s\n", seed);
         fprintf(fp, "Testcase: %s\n", testcase);
         fprintf(fp, "Coverage: %lf\n", coverage);
         fprintf(fp, "Error: %s\n", error);
@@ -214,7 +211,6 @@ void save_test_result(char *seed, unsigned char *testcase, double coverage, char
             perror("fopen");
             exit(EXIT_FAILURE);
         }
-        fprintf(fp, "Seed: %s\n", seed);
         fprintf(fp, "Testcase: %s\n", testcase);
         fprintf(fp, "Coverage: %lf\n", coverage);
         fprintf(fp, "Error: %s\n", error);
@@ -225,12 +221,6 @@ void save_test_result(char *seed, unsigned char *testcase, double coverage, char
     }
 }
 
-// 更新种子
-void optimize_seed(char *seed, unsigned char *testcase)
-{
-    strcpy(seed, testcase);
-}
-
 int newfz(int coverage, int max_coverage)
 {
     if (coverage > max_coverage)
@@ -239,7 +229,7 @@ int newfz(int coverage, int max_coverage)
         return 0;
 }
 
-void asan_target_program(char *seed, unsigned char *testcase)
+void asan_target_program(unsigned char *testcase)
 {
     char input1[MAX_INPUT_SIZE];
     char input2[MAX_INPUT_SIZE];
@@ -250,7 +240,7 @@ void asan_target_program(char *seed, unsigned char *testcase)
         perror("asan命令1执行失败");
         exit(EXIT_FAILURE);
     }
-    snprintf(input2, MAX_INPUT_SIZE, "echo \"%s\" | ./target_program_asan 2> ./out/asan/seed:%s_testcase:%s.txt", testcase, seed, testcase);
+    snprintf(input2, MAX_INPUT_SIZE, "echo \"%s\" | ./target_program_asan 2> ./out/asan/testcase:%s.txt", testcase, testcase);
     fp = popen(input2, "r"); // popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
     if (fp == NULL)
     {
@@ -259,7 +249,7 @@ void asan_target_program(char *seed, unsigned char *testcase)
     }
 }
 
-void getdata(char *coverage_cmd, int signal_num, int *pipe_fd, int *pipe_err, char *seed, unsigned char *testcase, double *max_coverage)
+void getdata(char *coverage_cmd, int signal_num, int *pipe_fd, int *pipe_err, unsigned char *testcase, double *max_coverage)
 {
     double coverage = 0;
     char gcov_output[MAX_COVERAGE_SIZE];
@@ -354,19 +344,19 @@ void getdata(char *coverage_cmd, int signal_num, int *pipe_fd, int *pipe_err, ch
     { // 如果出现了新的分支
         // 将当前种子与覆盖率传给optimize_seed函数，由该函数进行记录与优化种子
         *max_coverage = coverage;
-        save_test_result(seed, testcase, coverage, error, output, 0, signal_num);
+        save_test_result(testcase, coverage, error, output, 0, signal_num);
         // 更新种子
-        optimize_seed(seed, testcase);
+        // optimize_seed(testcase);
     }
     // 判断程序错误
     if (error[0] != '\0' || signal_num != 0)
     {
-        save_test_result(seed, testcase, coverage, error, output, 1, signal_num);
-        asan_target_program(seed, testcase);
+        save_test_result(testcase, coverage, error, output, 1, signal_num);
+        asan_target_program(testcase);
     }
 }
 
-void run_target_program(int *pipe_fd, int *pipe_err, int i, char *coverage_cmd, char *seed, unsigned char *testcase, double *max_coverage)
+void run_target_program(int *pipe_fd, int *pipe_err, int i, char *coverage_cmd, unsigned char *testcase, double *max_coverage)
 {
     char input[MAX_INPUT_SIZE];
     pid_t pid = fork();
@@ -380,7 +370,6 @@ void run_target_program(int *pipe_fd, int *pipe_err, int i, char *coverage_cmd, 
         // printf("my pid is %d\n",getpid());
 
         printf("process i:%d\n", i);
-        printf("seed:%s\n", seed);
         printf("testcase:%s\n", testcase);
         dup2(pipe_fd[1], STDOUT_FILENO);
         dup2(pipe_err[1], STDERR_FILENO);
@@ -403,12 +392,12 @@ void run_target_program(int *pipe_fd, int *pipe_err, int i, char *coverage_cmd, 
 
         if (WIFEXITED(status))
         { // 如果子进程正常退出（通过调用 exit 或返回 main 函数），WIFEXITED(status) 将返回非零值
-            getdata(coverage_cmd, 0, pipe_fd, pipe_err, seed, testcase, max_coverage);
+            getdata(coverage_cmd, 0, pipe_fd, pipe_err, testcase, max_coverage);
         }
         else if (WIFSIGNALED(status))
         {                                      // 如果子进程是由于信号而终止的（例如通过调用 kill 函数），WIFSIGNALED(status) 将返回非零值。
             int signal_num = WTERMSIG(status); // 可以使用 WTERMSIG(status) 获取子进程终止的信号编号。
-            getdata(coverage_cmd, signal_num, pipe_fd, pipe_err, seed, testcase, max_coverage);
+            getdata(coverage_cmd, signal_num, pipe_fd, pipe_err, testcase, max_coverage);
         }
     }
     else
@@ -471,11 +460,10 @@ int main(int argc, char *argv[])
         }
 
     */
-    // 设置随机数种子
-    srand(time(NULL));
+
 
     // mutate(seed, testcase);
-    strcpy(seed, argv[2]);
+    // strcpy(seed, argv[2]);
     strcpy(testcase, argv[2]);
 
     open_pipe(pipe_fd, pipe_err);
@@ -490,8 +478,8 @@ int main(int argc, char *argv[])
 
     for (i = 0; i < 100; i += 6)
     {
-        run_target_program(pipe_fd, pipe_err, i, coverage_cmd, seed, testcase, &max_coverage);
-        mutate(seed, testcase, i);
+        run_target_program(pipe_fd, pipe_err, i, coverage_cmd, testcase, &max_coverage);
+        mutate(testcase, i);
     }
 
     return 0;
