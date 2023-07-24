@@ -229,25 +229,6 @@ int newfz(int coverage, int max_coverage)
         return 0;
 }
 
-void asan_target_program(unsigned char *testcase)
-{
-    char input1[MAX_INPUT_SIZE];
-    char input2[MAX_INPUT_SIZE];
-    snprintf(input1, MAX_INPUT_SIZE, "gcc -fsanitize=address -g -o target_program_asan target_program.c");
-    FILE *fp = popen(input1, "r"); // popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
-    if (fp == NULL)
-    {
-        perror("asan命令1执行失败");
-        exit(EXIT_FAILURE);
-    }
-    snprintf(input2, MAX_INPUT_SIZE, "echo \"%s\" | ./target_program_asan 2> ./out/asan/testcase:%s.txt", testcase, testcase);
-    fp = popen(input2, "r"); // popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
-    if (fp == NULL)
-    {
-        perror("asan命令2执行失败");
-        exit(EXIT_FAILURE);
-    }
-}
 
 void getdata(char *coverage_cmd, int signal_num, int *pipe_fd, int *pipe_err, unsigned char *testcase, double *max_coverage)
 {
@@ -352,7 +333,6 @@ void getdata(char *coverage_cmd, int signal_num, int *pipe_fd, int *pipe_err, un
     if (error[0] != '\0' || signal_num != 0)
     {
         save_test_result(testcase, coverage, error, output, 1, signal_num);
-        asan_target_program(testcase);
     }
 }
 
@@ -371,13 +351,13 @@ void run_target_program(int *pipe_fd, int *pipe_err, int i, char *coverage_cmd, 
 
         printf("process i:%d\n", i);
         printf("testcase:%s\n", testcase);
+        printf("子进程开始运行，pid为%d，ppid为%d\n", getpid(), getppid());
         dup2(pipe_fd[1], STDOUT_FILENO);
         dup2(pipe_err[1], STDERR_FILENO);
 
-        // char *args[] = {"target_program", testcase, NULL};
-        snprintf(input, MAX_INPUT_SIZE, "echo \"%s\" | ./target_program", testcase);
-        execl("/bin/sh", "sh", "-c", input, (char *)NULL); // shell 会将 -c 后的部分当做命令来执行。
-        // execv("./target_program", args);
+        char *path = "./target_program_asan";  
+        char *args[] = {path, testcase, NULL};
+        execv(path, args);
 
         // 如果execl调用失败，则打印错误信息并退出子进程
         perror("exec failed");
@@ -385,14 +365,16 @@ void run_target_program(int *pipe_fd, int *pipe_err, int i, char *coverage_cmd, 
     }
     else if (pid > 0)
     {
+        printf("父进程开始运行，pid为%d\n", getpid(), getpid());
         // 父进程等待子进程结束并处理僵尸进程
         int status;
         waitpid(pid, &status, 0);
+        printf("父进程等待子进程结束\n");
         // printf("father i :%d\n", i);
 
         if (WIFEXITED(status))
         { // 如果子进程正常退出（通过调用 exit 或返回 main 函数），WIFEXITED(status) 将返回非零值
-            getdata(coverage_cmd, 0, pipe_fd, pipe_err, testcase, max_coverage);
+            getdata(coverage_cmd, 0, pipe_fd, pipe_err,testcase, max_coverage);
         }
         else if (WIFSIGNALED(status))
         {                                      // 如果子进程是由于信号而终止的（例如通过调用 kill 函数），WIFSIGNALED(status) 将返回非零值。
@@ -406,15 +388,11 @@ void run_target_program(int *pipe_fd, int *pipe_err, int i, char *coverage_cmd, 
         perror("fork failed");
         exit(1);
     }
-
-    // 最后更新testcase
-    // mutate(seed, testcase);
-    // strcpy(testcase, "0xaa");
 }
 
 void open_pipe(int pipe_fd[2], int pipe_err[2])
 {
-    if (pipe(pipe_fd) == -1)
+     if (pipe(pipe_fd) == -1)
     {
         perror("pipe");
         exit(EXIT_FAILURE);
@@ -424,6 +402,7 @@ void open_pipe(int pipe_fd[2], int pipe_err[2])
         perror("pipe");
         exit(EXIT_FAILURE);
     }
+   
 }
 
 int main(int argc, char *argv[])
@@ -435,20 +414,22 @@ int main(int argc, char *argv[])
     int i = 0;
     int pipe_fd[2];
     int pipe_err[2];
+    int pipe_asan[2];
     char coverage_cmd[MAX_INPUT_SIZE];
     char input[MAX_INPUT_SIZE];
 
-    snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov ./target_program -b | head -n 2 | tail -1 | grep -Eo '[0-9]{1,2}\\.[0-9]{2}|100\\.00'"); // 用于格式化输出字符串，并将结果写入到指定的缓冲区
+    snprintf(coverage_cmd, MAX_INPUT_SIZE, "gcov ./target_program_v2 -b | head -n 2 | tail -1 | grep -Eo '[0-9]{1,2}\\.[0-9]{2}|100\\.00'"); // 用于格式化输出字符串，并将结果写入到指定的缓冲区
+   
     // 检查命令行参数
     if (argc < 2)
     {
         fprintf(stderr, "Usage: %s target_program\n", argv[0]);
         exit(EXIT_FAILURE);
     }
+    
     mkdir("./out", 0775);
     mkdir("./out/queue", 0775);
     mkdir("./out/errors", 0775);
-    mkdir("./out/asan", 0775);
     /*
         for(;i<argc;i++){
           strcpy( seed, *(argv+i));
@@ -463,20 +444,22 @@ int main(int argc, char *argv[])
 
 
     // mutate(seed, testcase);
-    // strcpy(seed, argv[2]);
+    strcpy(seed, argv[2]);
     strcpy(testcase, argv[2]);
+    //strcpy(testcase, "ffffff");
 
     open_pipe(pipe_fd, pipe_err);
 
-    snprintf(input, MAX_INPUT_SIZE, "gcc target_program.c -fprofile-arcs -ftest-coverage -o target_program");
+    snprintf(input, MAX_INPUT_SIZE, "gcc -g -O0 -fsanitize=address -fprofile-arcs -ftest-coverage -o target_program_asan target_program_v2.c");
     FILE *fp = popen(input, "r"); // popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
     if (fp == NULL)
     {
-        perror("gcc插桩失败");
+        perror("插桩失败");
         exit(EXIT_FAILURE);
     }
+    pclose(fp);
 
-    for (i = 0; i < 100; i += 6)
+    for (i = 0; i < 100; i +=6)
     {
         run_target_program(pipe_fd, pipe_err, i, coverage_cmd, testcase, &max_coverage);
         mutate(testcase, i);
