@@ -28,7 +28,7 @@ volatile sig_atomic_t child_timed_out = 0;
 // 位翻转操作
 void flip_bit(char *seed, size_t seed_size)
 {
-    int byte_pos = rand() % seed_size;
+    int byte_pos = rand() %( seed_size+1);
     int bit_pos = rand() % 8;
     seed[byte_pos] ^= 1 << bit_pos;
 }
@@ -36,7 +36,7 @@ void flip_bit(char *seed, size_t seed_size)
 // 整数运算操作
 void integer_arithmetic(char *seed, size_t seed_size)
 {
-    int byte_pos = rand() % seed_size;
+    int byte_pos = rand() % ( seed_size+1);
     int value = (int)seed[byte_pos];
 
     switch (rand() % 4)
@@ -138,12 +138,36 @@ void havoc(char *seed, size_t *seed_size)
     }
 }
 
+// 删除文件
+void deleteFile(char* filePath) {
+    if (remove(filePath) != 0) {
+        printf("文件删除失败！\n");
+    }
+}
+
+// 新增文件
+void writeFile(const char* fileName, const char* data) {
+    // 打开文件以进行写入（二进制格式）
+    FILE* file = fopen(fileName, "wb");
+    if (file == NULL) {
+        printf("无法打开文件\n");
+        return;
+    }
+
+    // 写入数据到文件
+    size_t dataSize = strlen(data);
+    fwrite(data, sizeof(char), dataSize, file);
+
+    // 关闭文件
+    fclose(file);
+}
+
 // 变异种子函数
 size_t mutate(char *mutated_seed, int mutate_flag)
 {
     size_t seed_size = strlen(mutated_seed);
     int choose_mutate = 0;
-    choose_mutate = mutate_flag % 6;
+    choose_mutate = mutate_flag % 1;
 
     switch (choose_mutate)
     {
@@ -154,15 +178,9 @@ size_t mutate(char *mutated_seed, int mutate_flag)
         integer_arithmetic(mutated_seed, seed_size);
         break;
     case 2:
-        insert_special(mutated_seed, &seed_size);
-        break;
-    case 3:
-        append_content(mutated_seed, &seed_size);
-        break;
-    case 4:
         havoc(mutated_seed, &seed_size);
         break;
-    case 5:
+    case 3:
         if (seed_size <= 1)
         {
             break;
@@ -172,8 +190,15 @@ size_t mutate(char *mutated_seed, int mutate_flag)
         memmove(mutated_seed + start, mutated_seed + start + len, seed_size - start - len + 1);
         seed_size -= len;
         break;
+    case 4:
+        insert_special(mutated_seed, &seed_size);
+        break;
+    case 5:
+        append_content(mutated_seed, &seed_size);
+        break;
     }
-
+    deleteFile("./out/queue/testcase");
+    writeFile("./out/queue/testcase",mutated_seed);
     return seed_size;
 }
 
@@ -217,7 +242,7 @@ unsigned char *readtestcase(char *d_name)
 }
 
 // 将测试结果保存到文件
-void save_test_result(unsigned char *d_name, double coverage, char *error, char *output, int flag1, int flag2, int signal_num, int *a, int *b, int *c)
+void save_test_result(double coverage, char *error, char *output, int flag1, int flag2, int signal_num, int *a, int *b, int *c)
 {
     char filename[MAX_INPUT_SIZE];
     /*
@@ -236,7 +261,7 @@ void save_test_result(unsigned char *d_name, double coverage, char *error, char 
             perror("fopen");
             exit(EXIT_FAILURE);
         }
-        fprintf(fp, "Testcase: %s\n", readtestcase(d_name));
+        fprintf(fp, "Testcase: %s\n", readtestcase("./out/queue/testcase"));
         fprintf(fp, "Signal: %d\n", signal_num);
         fclose(fp);
         *a = *a+1;
@@ -251,7 +276,7 @@ void save_test_result(unsigned char *d_name, double coverage, char *error, char 
             perror("fopen");
             exit(EXIT_FAILURE);
         }
-        fprintf(fp, "Testcase: %s\n", readtestcase(d_name));
+        fprintf(fp, "Testcase: %s\n", readtestcase("./out/queue/testcase"));
         fprintf(fp, "Coverage: %lf\n", coverage);
         fprintf(fp, "Error: %s\n", error);
         if (signal_num != 0)
@@ -269,7 +294,7 @@ void save_test_result(unsigned char *d_name, double coverage, char *error, char 
             perror("fopen");
             exit(EXIT_FAILURE);
         }
-        fprintf(fp, "Testcase: %s\n", readtestcase(d_name));
+        fprintf(fp, "Testcase: %s\n", readtestcase("./out/queue/testcase"));
         fprintf(fp, "Coverage: %lf\n", coverage);
         fprintf(fp, "Error: %s\n", error);
         if (signal_num != 0)
@@ -289,7 +314,7 @@ int newfz(int coverage, int max_coverage)
 }
 
 
-void getdata(char *coverage_cmd, int signal_num, int *pipe_fd, int *pipe_err, unsigned char *d_name, double *max_coverage, int *a, int *b, int *c)
+void getdata(char *coverage_cmd, int signal_num, int *pipe_fd, int *pipe_err, double *max_coverage, int *a, int *b, int *c)
 {
     double coverage = 0;
     char gcov_output[MAX_COVERAGE_SIZE];
@@ -298,7 +323,7 @@ void getdata(char *coverage_cmd, int signal_num, int *pipe_fd, int *pipe_err, un
     int flag_fd;
     int flag_err;
     int ret;
-
+/*
     //  获取代码覆盖率
     FILE *fp = popen(coverage_cmd, "r"); // popen() 函数通过创建一个管道，调用 fork 产生一个子进程，执行一个 shell 以运行命令来开启一个进程,如果调用 fork() 或 pipe() 失败，或者不能分配内存将返回NULL，否则返回一个读或者打开文件的指针
     if (fp == NULL)
@@ -312,7 +337,7 @@ void getdata(char *coverage_cmd, int signal_num, int *pipe_fd, int *pipe_err, un
     fgets(gcov_output, MAX_COVERAGE_SIZE, fp);
     pclose(fp);
     coverage = atof(gcov_output); // 将字符串里的数字字符转化为浮点数。返回浮点值
-
+*/
     // 获取文件描述符的当前标志
     flag_fd = fcntl(pipe_fd[0], F_GETFL);
     if (flag_fd == -1)
@@ -373,25 +398,26 @@ void getdata(char *coverage_cmd, int signal_num, int *pipe_fd, int *pipe_err, un
     }
     else
     {
-        printf("error:%s\n", error);
+        //printf("error:%s\n", error);
         error[ret] = '\0';
     }
 
-    printf("coverage:%lf\n\n", coverage);
-
+    //printf("coverage:%lf\n\n", coverage);
+/*
     // 判断是否出现新的分支
     if (newfz(coverage, *max_coverage))
     { // 如果出现了新的分支
         // 将当前种子与覆盖率传给optimize_seed函数，由该函数进行记录与优化种子
         *max_coverage = coverage;
-        save_test_result(d_name, coverage, error, output, 0, 0, signal_num, a, b, c);
+        save_test_result(coverage, error, output, 0, 0, signal_num, a, b, c);
         // 更新种子
         // optimize_seed(testcase);
     }
+*/
     // 判断程序错误
     if (error[0] != '\0' || signal_num != 0)
     {
-        save_test_result(d_name, coverage, error, output, 0, 1, signal_num, a, b, c);
+        save_test_result(coverage, error, output, 0, 1, signal_num, a, b, c);
     }
 }
 
@@ -400,7 +426,7 @@ void timeout_handler(int signum)
     child_timed_out = 1;
 }
 
-void run_target_program(int *pipe_fd, int *pipe_err, int i, char *coverage_cmd, unsigned char *d_name, double *max_coverage, int *a, int *b, int *c)
+void run_target_program(int *pipe_fd, int *pipe_err, int i, char *coverage_cmd, double *max_coverage, int *a, int *b, int *c)
 {
     char input[MAX_INPUT_SIZE];
     pid_t pid = fork();
@@ -414,14 +440,12 @@ void run_target_program(int *pipe_fd, int *pipe_err, int i, char *coverage_cmd, 
         // printf("my pid is %d\n",getpid());
 
         printf("process i:%d\n", i);
-        printf("d_name:%s\n", d_name);
-        printf("子进程开始运行，pid为%d，ppid为%d\n", getpid(), getppid());
+        //printf("子进程开始运行，pid为%d，ppid为%d\n", getpid(), getppid());
         dup2(pipe_fd[1], STDOUT_FILENO);
         dup2(pipe_err[1], STDERR_FILENO);
 
         char *path = "./vim";  
-        char str[50] = "./in/";
-        char* args[] = {path, "-u", "NONE", "-X", "-Z", "-e", "-s", "-S", strcat(str, d_name), "-c", ":qa!", NULL};
+        char* args[] = {path, "-u", "NONE", "-X", "-Z", "-e", "-s", "-S", "./out/queue/testcase", "-c", ":qa!", NULL};
         execv(path, args);
 
         // 如果execl调用失败，则打印错误信息并退出子进程
@@ -434,7 +458,7 @@ void run_target_program(int *pipe_fd, int *pipe_err, int i, char *coverage_cmd, 
     }
     else if (pid > 0)
     {
-        printf("父进程开始运行，pid为%d\n", getpid(), getpid());
+        //printf("父进程开始运行，pid为%d\n", getpid(), getpid());
         // 父进程等待子进程结束并处理僵尸进程
         int status;
         signal(SIGALRM, timeout_handler);   // 设置超时信号处理函数
@@ -445,22 +469,22 @@ void run_target_program(int *pipe_fd, int *pipe_err, int i, char *coverage_cmd, 
             terminated_pid = waitpid(pid, &status, WNOHANG);
         }
         alarm(0);
-        printf("父进程等待子进程结束\n");
+        //printf("父进程等待子进程结束\n");
         if (terminated_pid > 0) {
              if (WIFEXITED(status))
             { // 如果子进程正常退出（通过调用 exit 或返回 main 函数），WIFEXITED(status) 将返回非零值
-                getdata(coverage_cmd, 0, pipe_fd, pipe_err,d_name, max_coverage, a, b, c);
+                getdata(coverage_cmd, 0, pipe_fd, pipe_err, max_coverage, a, b, c);
             }
             else if (WIFSIGNALED(status))
             { // 如果子进程是由于信号而终止的（例如通过调用 kill 函数），WIFSIGNALED(status) 将返回非零值。
                 int signal_num = WTERMSIG(status); // 可以使用 WTERMSIG(status) 获取子进程终止的信号编号。
-                getdata(coverage_cmd, signal_num, pipe_fd, pipe_err, d_name, max_coverage, a, b, c);
+                getdata(coverage_cmd, signal_num, pipe_fd, pipe_err, max_coverage, a, b, c);
             }
         }
         else if (terminated_pid == 0) {
             // 等待超时，向子进程发送终止信号
             kill(pid, 9);
-            save_test_result(d_name, 0, NULL, NULL, 1, 0, SIGALRM, a, b, c);
+            save_test_result( 0, NULL, NULL, 1, 0, SIGALRM, a, b, c);
         }
         else {
             // waitpid 出错
@@ -491,7 +515,81 @@ void open_pipe(int pipe_fd[2], int pipe_err[2])
    
 }
 
+// 复制in文件夹中内容至queue
+void copyFiles() {
+    char sourceFolder[] = "./in";
+    char destFolder[] = "./out/queue";
 
+    // 创建目标文件夹
+    int result = mkdir(destFolder, 0777);
+
+    if (result != 0) {
+        printf("无法创建queue文件夹\n");
+        return;
+    }
+
+    // 打开源文件夹
+    DIR* dir = opendir(sourceFolder);
+
+    if (dir == NULL) {
+        printf("打开in文件夹失败\n");
+        return;
+    }
+
+    struct dirent* entry;
+    char sourcePath[100];
+    char destPath[100];
+
+    // 遍历源文件夹中的文件
+    while ((entry = readdir(dir)) != NULL) {
+        // 排除特殊目录 "." 和 ".."
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        // 构建源文件路径
+        snprintf(sourcePath, sizeof(sourcePath), "%s/%s", sourceFolder, entry->d_name);
+
+        // 构建目标文件路径
+        snprintf(destPath, sizeof(destPath), "%s/%s", destFolder, entry->d_name);
+
+        // 复制文件
+        FILE* sourceFile = fopen(sourcePath, "rb");
+        FILE* destFile = fopen(destPath, "wb");
+
+        if (sourceFile && destFile) {
+            char buffer[1024];
+            size_t bytesRead;
+
+            while ((bytesRead = fread(buffer, 1, sizeof(buffer), sourceFile)) > 0) {
+                fwrite(buffer, 1, bytesRead, destFile);
+            }
+
+            fclose(sourceFile);
+            fclose(destFile);
+        }
+    }
+
+    // 关闭源文件夹
+    closedir(dir);
+
+}
+
+void renameFile(char* dirPath, char* fileName) {
+    char oldPath[100];
+    char newPath[100];
+
+    // 构建原始文件路径
+    snprintf(oldPath, sizeof(oldPath), "%s/%s", dirPath, fileName);
+
+    // 构建新文件路径
+    snprintf(newPath, sizeof(newPath), "%s/%s", dirPath, "testcase");
+
+    // 调用 rename 函数进行文件重命名
+    if (rename(oldPath, newPath) != 0) {
+        printf("文件重命名失败\n");
+    }
+}
 
 int main(int argc, char *argv[])
 {
@@ -515,22 +613,23 @@ int main(int argc, char *argv[])
    
     mkdir("./out", 0775);
     mkdir("./out/hang", 0775);
-    mkdir("./out/queue", 0775);
     mkdir("./out/errors", 0775);
+    copyFiles();
 
     open_pipe(pipe_fd, pipe_err);
     // strcpy(testcase,"./in/hang");
     // 打开目标文件夹
-    dir = opendir("./in");
+    dir = opendir("./out/queue/");
     if (dir != NULL) {
         // 循环遍历目标文件夹的内容
         while ((entry = readdir(dir)) != NULL) {
             // 过滤掉 "." 和 ".." 目录
             if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-                for (i = 0; i < 1; i +=6)
+                renameFile("./out/queue/",entry->d_name);
+                for (i = 0; i < 10000; i++)
                 {
-                    run_target_program(pipe_fd, pipe_err, i, coverage_cmd, entry->d_name, &max_coverage, &a, &b, &c);
-                    //mutate(testcase, i);
+                    run_target_program(pipe_fd, pipe_err, i, coverage_cmd, &max_coverage, &a, &b, &c);
+                    mutate(readtestcase("./out/queue/testcase"), i);
                 }
             }
         }
