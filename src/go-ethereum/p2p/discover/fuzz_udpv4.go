@@ -63,22 +63,22 @@ func MutatePingMsg(f *fuzz.Fuzzer, msg *v4wire.Ping) {
 }
 
 func MutatePongMsg(f *fuzz.Fuzzer, msg *v4wire.Pong) {
-	f.Fuzz(msg.To)
+	f.Fuzz(&msg.To)
 }
 
 func MutateFindnodeMsg(f *fuzz.Fuzzer, msg *v4wire.Findnode) {
-	f.Fuzz(msg.Expiration)
+	f.Fuzz(&msg.Expiration)
 }
 
 func MutateNeighborsMsg(f *fuzz.Fuzzer, msg *v4wire.Neighbors) {
-	f.Fuzz(msg.Expiration)
-	f.Fuzz(msg.Nodes)
+	f.Fuzz(&msg.Expiration)
+	f.Fuzz(&msg.Nodes)
 }
 
 func MutateENRRequestMsg(f *fuzz.Fuzzer, msg *v4wire.ENRRequest) {
-	f.Fuzz(msg.Expiration)
+	f.Fuzz(&msg.Expiration)
 }
 
 func MutateENRResponseMsg(f *fuzz.Fuzzer, msg *v4wire.ENRResponse) {
-	f.Fuzz(msg.Record)
+	f.Fuzz(&msg.Record)
 }
