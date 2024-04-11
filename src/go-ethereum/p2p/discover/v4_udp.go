@@ -242,12 +242,11 @@ func (t *UDPv4) ping(n *enode.Node) (seq uint64, err error) {
 // sendPing sends a ping message to the given node and invokes the callback
 // when the reply arrives.
 func (t *UDPv4) sendPing(toid enode.ID, toaddr *net.UDPAddr, callback func()) *replyMatcher {
-	//origin
+	//Origin code
 	//req := t.makePing(toaddr)
 
-	//add queue
+	//Fuzz code ping
 	t.reqSend <- t.makePing(toaddr)
-	// 从reqReceive接收修改后的req
 	req := <-t.reqReceive
 
 	packet, hash, err := v4wire.Encode(t.priv, req)
@@ -343,10 +342,21 @@ func (t *UDPv4) findnode(toid enode.ID, toaddr *net.UDPAddr, target v4wire.Pubke
 		}
 		return true, nreceived >= bucketSize
 	})
-	t.send(toaddr, toid, &v4wire.Findnode{
+
+	//Fuzz code findnode
+	t.reqSend <- &v4wire.Findnode{
 		Target:     target,
 		Expiration: uint64(time.Now().Add(expiration).Unix()),
-	})
+	}
+	req := <-t.reqReceive
+	t.send(toaddr, toid, req)
+
+	//Origin code
+	//t.send(toaddr, toid, &v4wire.Findnode{
+	//	Target:     target,
+	//	Expiration: uint64(time.Now().Add(expiration).Unix()),
+	//})
+
 	// Ensure that callers don't see a timeout if the node actually responded. Since
 	// findnode can receive more than one neighbors response, the reply matcher will be
 	// active until the remote node sends enough nodes. If the remote end doesn't have
@@ -364,9 +374,16 @@ func (t *UDPv4) RequestENR(n *enode.Node) (*enode.Node, error) {
 	addr := &net.UDPAddr{IP: n.IP(), Port: n.UDP()}
 	t.ensureBond(n.ID(), addr)
 
-	req := &v4wire.ENRRequest{
+	//Fuzz code ENRRequest
+	t.reqSend <- &v4wire.ENRRequest{
 		Expiration: uint64(time.Now().Add(expiration).Unix()),
 	}
+	req := <-t.reqReceive
+
+	//Origin code
+	//req := &v4wire.ENRRequest{
+	//	Expiration: uint64(time.Now().Add(expiration).Unix()),
+	//}
 	packet, hash, err := v4wire.Encode(t.priv, req)
 	if err != nil {
 		return nil, err
@@ -682,13 +699,23 @@ func (t *UDPv4) verifyPing(h *packetHandlerV4, from *net.UDPAddr, fromID enode.I
 func (t *UDPv4) handlePing(h *packetHandlerV4, from *net.UDPAddr, fromID enode.ID, mac []byte) {
 	req := h.Packet.(*v4wire.Ping)
 
-	// Reply.
-	t.send(from, fromID, &v4wire.Pong{
+	//Fuzz code pong
+	t.reqSend <- &v4wire.Pong{
 		To:         v4wire.NewEndpoint(from, req.From.TCP),
 		ReplyTok:   mac,
 		Expiration: uint64(time.Now().Add(expiration).Unix()),
 		ENRSeq:     t.localNode.Node().Seq(),
-	})
+	}
+	fuzzReq := <-t.reqReceive
+	t.send(from, fromID, fuzzReq)
+
+	// Reply.   Origin code
+	//t.send(from, fromID, &v4wire.Pong{
+	//	To:         v4wire.NewEndpoint(from, req.From.TCP),
+	//	ReplyTok:   mac,
+	//	Expiration: uint64(time.Now().Add(expiration).Unix()),
+	//	ENRSeq:     t.localNode.Node().Seq(),
+	//})
 
 	// Ping back if our last pong on file is too far in the past.
 	n := wrapNode(enode.NewV4(h.senderKey, from.IP, int(req.From.TCP), from.Port))
@@ -757,13 +784,25 @@ func (t *UDPv4) handleFindnode(h *packetHandlerV4, from *net.UDPAddr, fromID eno
 			p.Nodes = append(p.Nodes, nodeToRPC(n))
 		}
 		if len(p.Nodes) == v4wire.MaxNeighbors {
-			t.send(from, fromID, &p)
+			//Fuzz code Neighbors
+			t.reqSend <- &p
+			req := <-t.reqReceive
+			t.send(from, fromID, req)
+
+			//Origin code
+			//t.send(from, fromID, &p)
 			p.Nodes = p.Nodes[:0]
 			sent = true
 		}
 	}
 	if len(p.Nodes) > 0 || !sent {
-		t.send(from, fromID, &p)
+		//Fuzz code Neighbors
+		t.reqSend <- &p
+		req := <-t.reqReceive
+		t.send(from, fromID, req)
+
+		//Origin code
+		//t.send(from, fromID, &p)
 	}
 }
 
@@ -796,10 +835,19 @@ func (t *UDPv4) verifyENRRequest(h *packetHandlerV4, from *net.UDPAddr, fromID e
 }
 
 func (t *UDPv4) handleENRRequest(h *packetHandlerV4, from *net.UDPAddr, fromID enode.ID, mac []byte) {
-	t.send(from, fromID, &v4wire.ENRResponse{
+	//Fuzz code ENRResponse
+	t.reqSend <- &v4wire.ENRResponse{
 		ReplyTok: mac,
 		Record:   *t.localNode.Node().Record(),
-	})
+	}
+	req := <-t.reqReceive
+	t.send(from, fromID, req)
+
+	//Origin code
+	//t.send(from, fromID, &v4wire.ENRResponse{
+	//	ReplyTok: mac,
+	//	Record:   *t.localNode.Node().Record(),
+	//})
 }
 
 // ENRRESPONSE/v4

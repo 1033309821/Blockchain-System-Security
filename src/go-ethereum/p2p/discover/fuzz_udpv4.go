@@ -72,6 +72,7 @@ func MutateFindnodeMsg(f *fuzz.Fuzzer, msg *v4wire.Findnode) {
 
 func MutateNeighborsMsg(f *fuzz.Fuzzer, msg *v4wire.Neighbors) {
 	f.Fuzz(msg.Expiration)
+	f.Fuzz(msg.Nodes)
 }
 
 func MutateENRRequestMsg(f *fuzz.Fuzzer, msg *v4wire.ENRRequest) {
