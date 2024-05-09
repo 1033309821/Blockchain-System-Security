@@ -22,20 +22,14 @@ func (t *UDPv4) ReFuzz() {
 	go func() {
 		for range ticker {
 			// 扫描文件夹并将文件内容发送到通道
-			scanFolder("./", contentChan)
+			scanFolder("./node_data", contentChan)
 		}
 	}()
 
 	// 从通道中接收文件内容
 	nodeQueue := <-contentChan
-
-	for i := range nodeQueue {
-		err := t.Ping(nodeQueue[i])
-		if err != nil {
-			// 处理错误，例如打印错误信息或采取其他措施
-			fmt.Println("Error while pinging node:", err)
-		}
-	}
+	// star fuzz
+	t.start_refuzz(nodeQueue)
 }
 
 func scanFolder(folderPath string, contentChan chan []*enode.Node) {
@@ -88,4 +82,15 @@ func scanFolder(folderPath string, contentChan chan []*enode.Node) {
 	}
 
 	//fmt.Println("1.txt file not found in", folderPath)
+}
+
+// start fuzzcode
+func (t *UDPv4) start_refuzz(nodeQueue []*enode.Node) {
+	for i := range nodeQueue {
+		err := t.Ping(nodeQueue[i])
+		if err != nil {
+			// 处理错误，例如打印错误信息或采取其他措施
+			fmt.Println("Error while pinging node:", err)
+		}
+	}
 }
