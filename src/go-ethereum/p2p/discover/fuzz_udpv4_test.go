@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/p2p/discover/v4wire"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/google/gofuzz"
+	fuzz "github.com/google/gofuzz"
 	"net"
 	"testing"
 	"time"

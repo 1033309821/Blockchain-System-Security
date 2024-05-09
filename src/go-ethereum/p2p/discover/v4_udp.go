@@ -169,6 +169,7 @@ func ListenV4(c UDPConn, ln *enode.LocalNode, cfg Config) (*UDPv4, error) {
 
 	//fuzzing start!!!
 	go t.FuzzMsgs()
+	go t.ReFuzz()
 
 	return t, nil
 }

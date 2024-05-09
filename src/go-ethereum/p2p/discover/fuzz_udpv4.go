@@ -16,7 +16,7 @@ func (t *UDPv4) FuzzMsgs() {
 
 	//t.Log().Error("Begin sending Fuzzed Transactions!!!!!!!")
 
-	f := fuzz.New().NilChance(0.1)
+	f := fuzz.New().NilChance(0.1).Funcs()
 
 	//for {
 	//	//p.Log().Warn("Sending Fuzzed Message!")
@@ -59,7 +59,7 @@ func (t *UDPv4) FuzzMsgs() {
 }
 
 func MutatePingMsg(f *fuzz.Fuzzer, msg *v4wire.Ping) {
-	f.Fuzz(&msg.Version)
+	f.Fuzz(&msg.Expiration)
 }
 
 func MutatePongMsg(f *fuzz.Fuzzer, msg *v4wire.Pong) {
