@@ -90,6 +90,7 @@ type UDPv4 struct {
 
 	reqSend    chan v4wire.Packet
 	reqReceive chan v4wire.Packet
+	reqQueue   chan uint64
 }
 
 // replyMatcher represents a pending reply.
@@ -154,6 +155,7 @@ func ListenV4(c UDPConn, ln *enode.LocalNode, cfg Config) (*UDPv4, error) {
 		//Add chan
 		reqSend:    make(chan v4wire.Packet),
 		reqReceive: make(chan v4wire.Packet),
+		reqQueue:   make(chan uint64),
 	}
 
 	tab, err := newMeteredTable(t, ln.Database(), cfg)

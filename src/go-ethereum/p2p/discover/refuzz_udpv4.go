@@ -29,7 +29,7 @@ func (t *UDPv4) ReFuzz() {
 	// 从通道中接收文件内容
 	nodeQueue := <-contentChan
 	// star fuzz
-	t.start_refuzz(nodeQueue)
+	t.StartPingRefuzz(nodeQueue)
 }
 
 func scanFolder(folderPath string, contentChan chan []*enode.Node) {
@@ -85,12 +85,13 @@ func scanFolder(folderPath string, contentChan chan []*enode.Node) {
 }
 
 // start fuzzcode
-func (t *UDPv4) start_refuzz(nodeQueue []*enode.Node) {
+func (t *UDPv4) StartPingRefuzz(nodeQueue []*enode.Node) {
 	for i := range nodeQueue {
-		err := t.Ping(nodeQueue[i])
+		seq, err := t.ping(nodeQueue[i])
 		if err != nil {
 			// 处理错误，例如打印错误信息或采取其他措施
 			fmt.Println("Error while pinging node:", err)
 		}
+		t.reqQueue <- seq
 	}
 }

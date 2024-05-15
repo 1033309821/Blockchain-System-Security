@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/p2p/discover/v4wire"
 	"github.com/ethereum/go-ethereum/rlp"
-	fuzz "github.com/google/gofuzz"
 	"net"
 	"testing"
 	"time"
@@ -23,16 +22,18 @@ func TestMutatePingMsg(t *testing.T) {
 	}
 
 	// 使用 gofuzz 创建一个 fuzzer
-	f := fuzz.New().NilChance(0.1)
+	f := NewFuzzer()
 
 	fmt.Println("Version: ", ping.Version)
+	fmt.Println("Expiration", ping.Expiration)
 	// 对 Ping 消息进行变异
-	MutatePingMsg(f, ping)
+	f.MutatePingMsg(ping)
 	fmt.Println("Version: ", ping.Version)
+	fmt.Println("Expiration", ping.Expiration)
 
 	// 在这里进行断言或其他需要的验证操作
 	// 例如，检查变异后的 ping.Version 是否发生了变化
-	if ping.Version == 1 {
+	if ping.Version == 1 && ping.Expiration == 1234567890 {
 		t.Error("Ping message version did not mutate")
 	}
 }
@@ -71,10 +72,10 @@ func TestMutateNeighborsMsg(t *testing.T) {
 	}
 
 	// 使用 gofuzz 创建一个 fuzzer
-	f := fuzz.New().NilChance(0.1)
+	f := NewFuzzer()
 
 	fmt.Println("Expiration: ", neighbors.Expiration)
-	MutateNeighborsMsg(f, neighbors)
+	f.MutateNeighborsMsg(neighbors)
 	fmt.Println("Expiration: ", neighbors.Expiration)
 	for i, node := range neighbors.Nodes {
 		fmt.Printf("Node %d:\n", i+1)
